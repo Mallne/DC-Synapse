@@ -13,7 +13,7 @@ data class OAuthConfig(
     val scopes: String,
     val clientId: String,
     val clientSecret: String,
-    val roles: Roles
+    val groups: Groups
 ) {
     constructor(configuration: Configuration) : this(
         enabled = configuration.security.enabled,
@@ -21,7 +21,7 @@ data class OAuthConfig(
         scopes = configuration.security.scopes,
         clientId = configuration.security.clientId,
         clientSecret = configuration.security.clientSecret,
-        roles = Roles(
+        groups = Groups(
             user = configuration.security.groups.user,
             admin = configuration.security.groups.admin,
             superAdmin = configuration.security.groups.superAdmin
@@ -43,7 +43,7 @@ data class OAuthConfig(
         }
     }
 
-    data class Roles(
+    data class Groups(
         val user: String,
         val admin: String,
         val superAdmin: String,

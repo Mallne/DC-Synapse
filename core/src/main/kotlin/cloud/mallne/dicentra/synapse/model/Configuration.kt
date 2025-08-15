@@ -66,9 +66,9 @@ class Configuration(
                 }
 
                 class SecurityGroupsConfiguration(application: Application) {
-                    val user = application.environment.config.tryGetString("security.roles.user") ?: ""
-                    val admin = application.environment.config.tryGetString("security.roles.admin") ?: ""
-                    val superAdmin = application.environment.config.tryGetString("security.roles.superadmin") ?: ""
+                    val user = application.environment.config.tryGetString("security.groups.user") ?: ""
+                    val admin = application.environment.config.tryGetString("security.groups.admin") ?: ""
+                    val superAdmin = application.environment.config.tryGetString("security.groups.superadmin") ?: ""
                 }
             }
         }

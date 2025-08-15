@@ -35,9 +35,9 @@ data class IntrospectionResponse(
 ) {
     fun toUser(config: OAuthConfig, scopes: List<String>): User {
         val acl = User.AccessLevels(
-            config.roles.user in groups,
-            config.roles.admin in groups,
-            config.roles.superAdmin in groups
+            config.groups.user in groups,
+            config.groups.admin in groups,
+            config.groups.superAdmin in groups
         )
         val locked = config.enabled && !active && !emailVerified
         return User(name, email, preferredUsername, locked, acl, scopes)

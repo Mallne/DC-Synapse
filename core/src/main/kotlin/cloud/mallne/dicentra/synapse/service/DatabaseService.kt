@@ -13,12 +13,7 @@ import org.koin.core.annotation.Single
 @Single
 class DatabaseService(config: Configuration) {
     private val scm = Schema(config.data.schema)
-    val database = Database.Companion.connect(
-        url = "jdbc:${config.data.url}",
-        user = config.data.user,
-        driver = "org.postgresql.Driver",
-        password = config.data.password,
-    )
+    val dataConfig = config.data
 
     /**
      * Executes a transaction within the context of the configured database and schema.
@@ -28,11 +23,16 @@ class DatabaseService(config: Configuration) {
      * @param block the transactional block to be executed. It operates within the context of the `Transaction`.
      * @return the result of the provided transaction block after execution.
      */
-    fun <T> transaction(block: Transaction.() -> T): T {
-        return transaction(database) {
-            SchemaUtils.setSchema(scm)
-            block()
-        }
+    fun <T> transaction(block: Transaction.() -> T): T = transaction(
+        Database.connect(
+            url = "jdbc:${dataConfig.url}",
+            user = dataConfig.user,
+            driver = "org.postgresql.Driver",
+            password = dataConfig.password,
+        )
+    ) {
+        connection.schema = scm.identifier
+        block()
     }
 
     /**
@@ -56,14 +56,28 @@ class DatabaseService(config: Configuration) {
      *              It operates within the context of the `Transaction`.
      * @return the result of the suspended transaction block.
      */
-    suspend fun <T> dbQuery(block: suspend Transaction.() -> T): T =
-        newSuspendedTransaction(Dispatchers.IO) {
-            SchemaUtils.setSchema(scm)
-            block()
-        }
+    suspend fun <T> dbQuery(block: suspend Transaction.() -> T): T = newSuspendedTransaction(
+        Dispatchers.IO, db = Database.connect(
+            url = "jdbc:${dataConfig.url}",
+            user = dataConfig.user,
+            driver = "org.postgresql.Driver",
+            password = dataConfig.password,
+        )
+    ) {
+        SchemaUtils.setSchema(scm)
+        block()
+    }
+
 
     init {
-        transaction {
+        transaction(
+            Database.connect(
+                url = "jdbc:${dataConfig.url}",
+                user = dataConfig.user,
+                driver = "org.postgresql.Driver",
+                password = dataConfig.password,
+            )
+        ) {
             SchemaUtils.createSchema(scm)
             SchemaUtils.setSchema(scm)
         }
