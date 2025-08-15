@@ -1,6 +1,5 @@
 package cloud.mallne.dicentra.synapse.routes
 
-import cloud.mallne.dicentra.synapse.model.Configuration
 import cloud.mallne.dicentra.synapse.model.DiscoveryRequest
 import cloud.mallne.dicentra.synapse.model.DiscoveryResponse
 import cloud.mallne.dicentra.synapse.model.User

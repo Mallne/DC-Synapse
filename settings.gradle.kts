@@ -13,12 +13,12 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "synapse"
+rootProject.name = "Synapse"
 
 include(":core")
 include(":host")
 
-val aviatorDir = file("../../aviator")
+val aviatorDir = file("../aviator")
 if (aviatorDir.exists()) {
     includeBuild(aviatorDir.absolutePath) {
         dependencySubstitution {
