@@ -19,7 +19,7 @@ data class IntrospectionResponse(
     @SerialName("email_verified")
     val emailVerified: Boolean = false,
     val name: String,
-    val groups: List<String>,
+    val groups: List<String> = listOf(),
     @SerialName("preferred_username")
     val preferredUsername: String,
     val active: Boolean = false,

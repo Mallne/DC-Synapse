@@ -22,9 +22,9 @@ data class OAuthConfig(
         clientId = configuration.security.clientId,
         clientSecret = configuration.security.clientSecret,
         roles = Roles(
-            user = configuration.security.roles.user,
-            admin = configuration.security.roles.admin,
-            superAdmin = configuration.security.roles.superAdmin
+            user = configuration.security.groups.user,
+            admin = configuration.security.groups.admin,
+            superAdmin = configuration.security.groups.superAdmin
         )
     )
 

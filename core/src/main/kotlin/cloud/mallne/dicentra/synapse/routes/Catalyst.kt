@@ -6,7 +6,6 @@ import cloud.mallne.dicentra.synapse.model.User
 import cloud.mallne.dicentra.synapse.model.dto.APIServiceDTO.Companion.transform
 import cloud.mallne.dicentra.synapse.service.APIDBService
 import cloud.mallne.dicentra.synapse.service.CatalystGenerator
-import cloud.mallne.dicentra.synapse.statics.APIService
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionGroupRule
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionTransformationType
 import cloud.mallne.dicentra.synapse.statics.verify
@@ -25,17 +24,6 @@ fun Application.catalyst() {
         authenticate(optional = true) {
             get("/catalyst") {
                 val user: User? = call.authentication.principal()
-                if (call.queryParameters.contains("builtin")) {
-                    verify(user != null) { HttpStatusCode.Unauthorized to "You need to be Authenticated for this request!" }
-                    verify(user.access.admin || user.access.superAdmin) {
-                        HttpStatusCode.Forbidden to "You need to be at least admin to access the baked in Service Definitions!"
-                    }
-                    val discoveryResponse = DiscoveryResponse(
-                        user,
-                        APIService.apis,
-                    )
-                    call.respond(discoveryResponse)
-                } else {
                     val services = apiService.readForScope(null).toMutableList()
                     if (user != null) {
                         val userServices = apiService.readForScopes(user.scopes)
@@ -60,7 +48,6 @@ fun Application.catalyst() {
                         definitions,
                     )
                     call.respond(response)
-                }
             }
         }
     }

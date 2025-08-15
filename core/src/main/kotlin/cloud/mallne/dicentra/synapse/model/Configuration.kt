@@ -55,7 +55,7 @@ class Configuration(
             val scopes = application.environment.config.tryGetString("security.scopes") ?: ""
             val clientId = application.environment.config.tryGetString("security.client_id") ?: ""
             val clientSecret = application.environment.config.tryGetString("security.client_secret") ?: ""
-            val roles = SecurityRolesConfiguration(application)
+            val groups = SecurityGroupsConfiguration(application)
             val app = SecurityAppConfiguration(application)
 
             companion object Nested {
@@ -65,7 +65,7 @@ class Configuration(
                     val issuer = application.environment.config.tryGetString("security.app.issuer") ?: ""
                 }
 
-                class SecurityRolesConfiguration(application: Application) {
+                class SecurityGroupsConfiguration(application: Application) {
                     val user = application.environment.config.tryGetString("security.roles.user") ?: ""
                     val admin = application.environment.config.tryGetString("security.roles.admin") ?: ""
                     val superAdmin = application.environment.config.tryGetString("security.roles.superadmin") ?: ""
