@@ -1,7 +1,12 @@
 package cloud.mallne.dicentra.synapse.routes
 
+import cloud.mallne.dicentra.aviator.core.ServiceMethods
+import cloud.mallne.dicentra.aviator.koas.parameters.Parameter
+import cloud.mallne.dicentra.aviator.model.ServiceLocator
+import cloud.mallne.dicentra.synapse.model.Configuration
 import cloud.mallne.dicentra.synapse.model.ScopeRequest
 import cloud.mallne.dicentra.synapse.model.User
+import cloud.mallne.dicentra.synapse.service.DiscoveryGenerator
 import cloud.mallne.dicentra.synapse.service.ScopeService
 import cloud.mallne.dicentra.synapse.statics.verify
 import io.ktor.http.*
@@ -11,6 +16,7 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import org.koin.ktor.ext.inject
+import kotlin.getValue
 
 /**
  * Configures routing for scope-related operations and handles requests for creating, reading, and deleting scopes.
@@ -33,6 +39,45 @@ import org.koin.ktor.ext.inject
  */
 fun Application.scope() {
     val scopeService by inject<ScopeService>()
+    val discoveryGenerator by inject<DiscoveryGenerator>()
+    val config by inject<Configuration>()
+
+    discoveryGenerator.memorize {
+        path("/scope/{scope}") {
+            operation(
+                method = HttpMethod.Get,
+                locator = ServiceLocator("${config.server.baseLocator}Scope", ServiceMethods.GATHER),
+                authenticationStrategy = DiscoveryGenerator.Companion.AuthenticationStrategy.MANDATORY,
+                summary = "Get a specific scope",
+                parameter = listOf(
+                    Parameter(
+                        name = "scope",
+                        input = Parameter.Input.Path,
+                    )
+                )
+            )
+            operation(
+                method = HttpMethod.Delete,
+                locator = ServiceLocator("${config.server.baseLocator}Scope", ServiceMethods.DELETE),
+                authenticationStrategy = DiscoveryGenerator.Companion.AuthenticationStrategy.MANDATORY,
+                summary = "Deletes a specific scope",
+                parameter = listOf(
+                    Parameter(
+                        name = "scope",
+                        input = Parameter.Input.Path,
+                    )
+                )
+            )
+        }
+        path("/scope") {
+            operation(
+                method = HttpMethod.Post,
+                locator = ServiceLocator("${config.server.baseLocator}Scope", ServiceMethods.CREATE),
+                authenticationStrategy = DiscoveryGenerator.Companion.AuthenticationStrategy.MANDATORY,
+                summary = "Creates a new scope",
+            )
+        }
+    }
     routing {
         authenticate {
             get("/scope/{scope}") {
@@ -59,11 +104,10 @@ fun Application.scope() {
                 scopeService.deleteByName(scope)
                 call.respond(scope)
             }
-            post<ScopeRequest>("/scope") {
+            post<ScopeRequest>("/scope") { body ->
                 val user: User? = call.authentication.principal()
                 verify(user != null) { HttpStatusCode.Unauthorized to "You need to be Authenticated for this request!" }
                 verify(user.access.admin || user.access.superAdmin) { HttpStatusCode.Forbidden to "You must be at least admin for this request!" }
-                val body = call.receive<ScopeRequest>()
                 verify(user.access.superAdmin || user.scopes.contains(body.name) || body.attachments.contains(user.userScope)) { HttpStatusCode.Forbidden to "You must be a member of the Scope you are trying to create!" }
                 val already = scopeService.readForName(body.name)
                 verify(already.isNotEmpty()) { HttpStatusCode.Conflict to "The Scope '${body.name}' already exists!" }

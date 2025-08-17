@@ -26,6 +26,11 @@ class Configuration(
         class ServerConfiguration(application: Application) {
             val cors = ServerCorsConfiguration(application)
             val hostname = application.environment.config.tryGetString("server.hostname") ?: "0.0.0.0"
+            val tlsEnabled = application.environment.config.tryGetString("server.tls_enabled")?.toBooleanish() ?: true
+            val info = application.environment.config.tryGetString("server.info") ?: "DiCentra Synapse"
+            val description = application.environment.config.tryGetString("server.description") ?: "A discovery endpoint for Aviator services."
+            val baseLocator = application.environment.config.tryGetString("server.base_locator") ?: "synapse"
+            val discoveryExclusions = application.environment.config.tryGetString("server.discovery_exclusions")?.split(",")?.filter { it.isNotBlank() } ?: listOf()
 
             companion object Nested {
                 class ServerCorsConfiguration(application: Application) {

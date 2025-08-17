@@ -1,18 +1,22 @@
 package cloud.mallne.dicentra.synapse.routes
 
+import cloud.mallne.dicentra.aviator.core.ServiceMethods
+import cloud.mallne.dicentra.aviator.koas.parameters.Parameter
+import cloud.mallne.dicentra.aviator.model.ServiceLocator
+import cloud.mallne.dicentra.synapse.model.Configuration
 import cloud.mallne.dicentra.synapse.model.DiscoveryRequest
 import cloud.mallne.dicentra.synapse.model.DiscoveryResponse
 import cloud.mallne.dicentra.synapse.model.User
 import cloud.mallne.dicentra.synapse.model.dto.APIServiceDTO.Companion.transform
 import cloud.mallne.dicentra.synapse.service.APIDBService
 import cloud.mallne.dicentra.synapse.service.CatalystGenerator
+import cloud.mallne.dicentra.synapse.service.DiscoveryGenerator
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionGroupRule
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionTransformationType
 import cloud.mallne.dicentra.synapse.statics.verify
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
-import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import org.koin.ktor.ext.inject
@@ -53,35 +57,107 @@ import org.koin.ktor.ext.inject
 fun Application.discovery() {
     val catalystGenerator by inject<CatalystGenerator>()
     val apiService by inject<APIDBService>()
+    val discoveryGenerator by inject<DiscoveryGenerator>()
+    val config by inject<Configuration>()
+
+    discoveryGenerator.memorize {
+        path("/services") {
+            operation(
+                method = HttpMethod.Get,
+                locator = ServiceLocator("${config.server.baseLocator}DiscoveryBundle", ServiceMethods.GATHER),
+                summary = "Get all available services",
+                parameter = listOf(
+                    Parameter(
+                        name = "transformationType",
+                        input = Parameter.Input.Query,
+                        description = "The transformation type to apply to the service definitions",
+                    ),
+                    Parameter(
+                        name = "groupRule",
+                        input = Parameter.Input.Query,
+                        description = "The grouping rule to apply to the service definitions",
+                    )
+                ),
+                authenticationStrategy = DiscoveryGenerator.Companion.AuthenticationStrategy.OPTIONAL
+            )
+            operation(
+                method = HttpMethod.Post,
+                locator = ServiceLocator("${config.server.baseLocator}DiscoveryEndpoint", ServiceMethods.UPSERT),
+                summary = "Create or update a service definition",
+                authenticationStrategy = DiscoveryGenerator.Companion.AuthenticationStrategy.MANDATORY
+            )
+        }
+        path("/services/{id}") {
+            operation(
+                method = HttpMethod.Get,
+                locator = ServiceLocator("${config.server.baseLocator}DiscoveryEndpoint", ServiceMethods.GATHER),
+                summary = "Get a specific service definition",
+                authenticationStrategy = DiscoveryGenerator.Companion.AuthenticationStrategy.MANDATORY,
+                parameter = listOf(
+                    Parameter(
+                        name = "id",
+                        input = Parameter.Input.Path,
+                    )
+                )
+            )
+            operation(
+                method = HttpMethod.Delete,
+                locator = ServiceLocator("${config.server.baseLocator}DiscoveryEndpoint", ServiceMethods.DELETE),
+                summary = "Delete a specific service definition",
+                authenticationStrategy = DiscoveryGenerator.Companion.AuthenticationStrategy.MANDATORY,
+                parameter = listOf(
+                    Parameter(
+                        name = "id",
+                        input = Parameter.Input.Path,
+                    )
+                )
+            )
+        }
+        path("/services/scope/{scope}") {
+            operation(
+                method = HttpMethod.Get,
+                locator = ServiceLocator("${config.server.baseLocator}DiscoveryScope", ServiceMethods.GATHER),
+                summary = "Get all services linked to a specific scope",
+                authenticationStrategy = DiscoveryGenerator.Companion.AuthenticationStrategy.MANDATORY,
+                parameter = listOf(
+                    Parameter(
+                        name = "scope",
+                        input = Parameter.Input.Path,
+                    )
+                )
+            )
+        }
+    }
     routing {
         authenticate(optional = true) {
             get("/services") {
                 val user: User? = call.authentication.principal()
-                    val services = apiService.readForScope(null).toMutableList()
-                    if (user != null) {
-                        val userServices = apiService.readForScopes(user.scopes)
-                        services.addAll(userServices)
-                    }
-                    val transformationType = ServiceDefinitionTransformationType.fromString(
-                        call.request.queryParameters["transformationType"]
-                            ?: ServiceDefinitionTransformationType.Auto.name
-                    )
+                val services = apiService.readForScope(null).toMutableList()
+                if (user != null) {
+                    val userServices = apiService.readForScopes(user.scopes)
+                    services.addAll(userServices)
+                }
+                val transformationType = ServiceDefinitionTransformationType.fromString(
+                    call.request.queryParameters["transformationType"]
+                        ?: ServiceDefinitionTransformationType.Auto.name
+                )
 
-                    val groupRule = ServiceDefinitionGroupRule.fromString(
-                        call.request.queryParameters["groupRule"]
-                            ?: ServiceDefinitionGroupRule.ServiceLocator.name
-                    )
+                val groupRule = ServiceDefinitionGroupRule.fromString(
+                    call.request.queryParameters["groupRule"]
+                        ?: ServiceDefinitionGroupRule.ServiceLocator.name
+                )
+                val thisServer = discoveryGenerator.memory.build()
 
-                    val definitions = services.transform(
-                        requestedTransformationType = transformationType,
-                        requestedRule = groupRule,
-                        catalystGenerator = catalystGenerator,
-                    )
-                    val response = DiscoveryResponse(
-                        user,
-                        definitions,
-                    )
-                    call.respond(response)
+                val definitions = services.transform(
+                    requestedTransformationType = transformationType,
+                    requestedRule = groupRule,
+                    catalystGenerator = catalystGenerator,
+                ) + thisServer
+                val response = DiscoveryResponse(
+                    user,
+                    definitions,
+                )
+                call.respond(response)
             }
         }
         authenticate(optional = false) {
@@ -115,8 +191,7 @@ fun Application.discovery() {
                 call.respond(discoveryResponse)
             }
 
-            post<DiscoveryRequest> {
-                val body = call.receive<DiscoveryRequest>()
+            post<DiscoveryRequest>("/services") { body: DiscoveryRequest ->
                 val user: User? = call.authentication.principal()
                 verify(user != null) { HttpStatusCode.Unauthorized to "You need to be Authenticated for this request!" }
                 val publicReq = body.forScope == null
