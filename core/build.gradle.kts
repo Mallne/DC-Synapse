@@ -50,4 +50,5 @@ dependencies {
     api(libs.dc.aviator.plugin.interception)
     api(libs.dc.aviator.plugin.weaver)
     api(libs.dc.aviator.plugin.synapse)
+    api(libs.dc.polyfill)
 }
