@@ -33,7 +33,7 @@ data class IntrospectionResponse(
     @SerialName("client_id")
     val clientId: String,
 ) {
-    fun toUser(config: OAuthConfig, scopes: List<String>): User {
+    fun toUser(config: Configuration.Nested.SecurityConfiguration, scopes: List<String>): User {
         val acl = User.AccessLevels(
             config.groups.user in groups,
             config.groups.admin in groups,

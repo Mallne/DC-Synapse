@@ -1,12 +1,20 @@
 package cloud.mallne.dicentra.synapse.model
 
 import cloud.mallne.dicentra.synapse.helper.toBooleanish
+import cloud.mallne.dicentra.synapse.statics.Client
+import cloud.mallne.dicentra.synapse.statics.Client.invoke
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionTransformationType
+import io.ktor.client.call.body
+import io.ktor.client.request.get
 import io.ktor.server.application.*
 import io.ktor.server.config.*
+import kotlinx.coroutines.runBlocking
+import org.slf4j.LoggerFactory
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 class Configuration(
-    application: Application
+    val application: Application
 ) {
     val security = SecurityConfiguration(application)
     val data = DatabaseConfiguration(application)
@@ -23,7 +31,7 @@ class Configuration(
     }
 
     companion object Nested {
-        class ServerConfiguration(application: Application) {
+        class ServerConfiguration(val application: Application) {
             val cors = ServerCorsConfiguration(application)
             val hostname = application.environment.config.tryGetString("server.hostname") ?: "0.0.0.0"
             val tlsEnabled = application.environment.config.tryGetString("server.tls_enabled")?.toBooleanish() ?: true
@@ -33,7 +41,7 @@ class Configuration(
             val discoveryExclusions = application.environment.config.tryGetString("server.discovery_exclusions")?.split(",")?.filter { it.isNotBlank() } ?: listOf()
 
             companion object Nested {
-                class ServerCorsConfiguration(application: Application) {
+                class ServerCorsConfiguration(val application: Application) {
                     val all: Boolean =
                         application.environment.config.tryGetString("server.cors.all")?.toBooleanish() ?: false
                     val hosts: List<String> =
@@ -42,7 +50,7 @@ class Configuration(
             }
         }
 
-        class CatalystConfiguration(application: Application) {
+        class CatalystConfiguration(val application: Application) {
             val enabled = application.environment.config.tryGetString("catalyst.enabled")?.toBooleanish() ?: true
             val anonymous = application.environment.config.tryGetString("catalyst.anonymous")?.toBooleanish() ?: true
             val serverName = application.environment.config.tryGetString("catalyst.server_name")
@@ -53,7 +61,7 @@ class Configuration(
                 ?: "Make Requests to a stored Service in a single Tenant setup."
         }
 
-        class SecurityConfiguration(application: Application) {
+        class SecurityConfiguration(val application: Application) {
             val enabled: Boolean =
                 application.environment.config.tryGetString("security.enabled")?.toBooleanish() ?: false
             val issuer = application.environment.config.tryGetString("security.issuer") ?: ""
@@ -61,16 +69,32 @@ class Configuration(
             val clientId = application.environment.config.tryGetString("security.client_id") ?: ""
             val clientSecret = application.environment.config.tryGetString("security.client_secret") ?: ""
             val groups = SecurityGroupsConfiguration(application)
-            val app = SecurityAppConfiguration(application)
+
+            lateinit var oidcConfig: OIDCConfig
+
+            init {
+                runBlocking {
+                    configure()
+                }
+            }
+
+            @OptIn(ExperimentalEncodingApi::class)
+            fun encodedCredentials() = Base64.encode("$clientId:$clientSecret".toByteArray())
+
+            suspend fun configure() {
+                if (enabled) {
+                    val client = Client()
+                    oidcConfig = client.get("$issuer/.well-known/openid-configuration").body()
+                    log.info("Using oidc config: $oidcConfig")
+                } else {
+                    log.info("Authentication is disabled")
+                }
+            }
 
             companion object Nested {
-                class SecurityAppConfiguration(application: Application) {
-                    val clientId = application.environment.config.tryGetString("security.app.client_id") ?: ""
-                    val scopes = application.environment.config.tryGetString("security.app.scopes") ?: ""
-                    val issuer = application.environment.config.tryGetString("security.app.issuer") ?: ""
-                }
+                private val log = LoggerFactory.getLogger(SecurityConfiguration::class.java)
 
-                class SecurityGroupsConfiguration(application: Application) {
+                class SecurityGroupsConfiguration(val application: Application) {
                     val user = application.environment.config.tryGetString("security.groups.user") ?: ""
                     val admin = application.environment.config.tryGetString("security.groups.admin") ?: ""
                     val superAdmin = application.environment.config.tryGetString("security.groups.superadmin") ?: ""
@@ -78,7 +102,7 @@ class Configuration(
             }
         }
 
-        class DatabaseConfiguration(application: Application) {
+        class DatabaseConfiguration(val application: Application) {
             val url = application.environment.config.tryGetString("data.url") ?: ""
             val user = application.environment.config.tryGetString("data.user") ?: ""
             val password = application.environment.config.tryGetString("data.password") ?: ""
