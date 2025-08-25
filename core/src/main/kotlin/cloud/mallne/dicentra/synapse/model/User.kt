@@ -1,7 +1,8 @@
 package cloud.mallne.dicentra.synapse.model
 
+import cloud.mallne.dicentra.polyfill.Validation
+import cloud.mallne.dicentra.polyfill.atLeastOf
 import cloud.mallne.dicentra.synapse.service.ScopeService
-import cloud.mallne.dicentra.synapse.statics.Validation
 import kotlinx.serialization.Serializable
 
 @Serializable

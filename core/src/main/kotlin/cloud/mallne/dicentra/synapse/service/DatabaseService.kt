@@ -1,19 +1,30 @@
 package cloud.mallne.dicentra.synapse.service
 
 import cloud.mallne.dicentra.synapse.model.Configuration
+import io.r2dbc.spi.ConnectionFactoryOptions
 import kotlinx.coroutines.Dispatchers
-import org.jetbrains.exposed.sql.Database
-import org.jetbrains.exposed.sql.Schema
-import org.jetbrains.exposed.sql.SchemaUtils
-import org.jetbrains.exposed.sql.Transaction
-import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransaction
-import org.jetbrains.exposed.sql.transactions.transaction
+import kotlinx.coroutines.runBlocking
+import org.jetbrains.exposed.v1.core.Schema
+import org.jetbrains.exposed.v1.r2dbc.R2dbcDatabase
+import org.jetbrains.exposed.v1.r2dbc.R2dbcTransaction
+import org.jetbrains.exposed.v1.r2dbc.SchemaUtils
+import org.jetbrains.exposed.v1.r2dbc.transactions.suspendTransaction
 import org.koin.core.annotation.Single
 
 @Single
 class DatabaseService(config: Configuration) {
     private val scm = Schema(config.data.schema)
     val dataConfig = config.data
+
+    val db = R2dbcDatabase.connect(
+        url = "r2dbc:${dataConfig.url}?schema=${dataConfig.schema}",
+        databaseConfig = {
+            connectionFactoryOptions {
+                option(ConnectionFactoryOptions.USER, dataConfig.user)
+                option(ConnectionFactoryOptions.PASSWORD, dataConfig.password)
+            }
+        },
+    )
 
     /**
      * Executes a transaction within the context of the configured database and schema.
@@ -23,16 +34,13 @@ class DatabaseService(config: Configuration) {
      * @param block the transactional block to be executed. It operates within the context of the `Transaction`.
      * @return the result of the provided transaction block after execution.
      */
-    fun <T> transaction(block: Transaction.() -> T): T = transaction(
-        Database.connect(
-            url = "jdbc:${dataConfig.url}",
-            user = dataConfig.user,
-            driver = "org.postgresql.Driver",
-            password = dataConfig.password,
-        )
-    ) {
-        connection.schema = scm.identifier
-        block()
+    fun <T> transaction(block: suspend R2dbcTransaction.() -> T): T = runBlocking(Dispatchers.IO) {
+        suspendTransaction(
+            db = db
+        ) {
+            SchemaUtils.setSchema(scm)
+            block()
+        }
     }
 
     /**
@@ -45,7 +53,7 @@ class DatabaseService(config: Configuration) {
      *              context of the `Transaction`.
      * @return the result of the provided transaction block after execution.
      */
-    suspend operator fun <T> invoke(block: Transaction.() -> T): T = dbQuery(block)
+    suspend operator fun <T> invoke(block: suspend R2dbcTransaction.() -> T): T = dbQuery(block)
 
     /**
      * Executes a suspended transaction within the database context, allowing operations
@@ -56,13 +64,9 @@ class DatabaseService(config: Configuration) {
      *              It operates within the context of the `Transaction`.
      * @return the result of the suspended transaction block.
      */
-    suspend fun <T> dbQuery(block: suspend Transaction.() -> T): T = newSuspendedTransaction(
-        Dispatchers.IO, db = Database.connect(
-            url = "jdbc:${dataConfig.url}",
-            user = dataConfig.user,
-            driver = "org.postgresql.Driver",
-            password = dataConfig.password,
-        )
+    suspend fun <T> dbQuery(block: suspend R2dbcTransaction.() -> T): T = suspendTransaction(
+        Dispatchers.IO,
+        db = db
     ) {
         SchemaUtils.setSchema(scm)
         block()
@@ -70,16 +74,13 @@ class DatabaseService(config: Configuration) {
 
 
     init {
-        transaction(
-            Database.connect(
-                url = "jdbc:${dataConfig.url}",
-                user = dataConfig.user,
-                driver = "org.postgresql.Driver",
-                password = dataConfig.password,
-            )
-        ) {
-            SchemaUtils.createSchema(scm)
-            SchemaUtils.setSchema(scm)
+        runBlocking(Dispatchers.IO) {
+            suspendTransaction(
+                db = db
+            ) {
+                SchemaUtils.createSchema(scm)
+                SchemaUtils.setSchema(scm)
+            }
         }
     }
 }

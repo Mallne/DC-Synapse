@@ -1,6 +1,8 @@
 package cloud.mallne.dicentra.synapse.routes
 
 import cloud.mallne.dicentra.aviator.core.ServiceMethods
+import cloud.mallne.dicentra.aviator.koas.extensions.ReferenceOr
+import cloud.mallne.dicentra.aviator.koas.io.Schema
 import cloud.mallne.dicentra.aviator.koas.parameters.Parameter
 import cloud.mallne.dicentra.aviator.model.ServiceLocator
 import cloud.mallne.dicentra.synapse.model.Configuration
@@ -19,6 +21,8 @@ import io.ktor.server.application.*
 import io.ktor.server.auth.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.toList
 import org.koin.ktor.ext.inject
 
 /**
@@ -63,6 +67,7 @@ fun Application.discovery() {
     discoveryGenerator.memorize {
         path("/services") {
             operation(
+                id = "ServiceDiscovery",
                 method = HttpMethod.Get,
                 locator = ServiceLocator("${config.server.baseLocator}DiscoveryBundle", ServiceMethods.GATHER),
                 summary = "Get all available services",
@@ -71,16 +76,27 @@ fun Application.discovery() {
                         name = "transformationType",
                         input = Parameter.Input.Query,
                         description = "The transformation type to apply to the service definitions",
+                        schema = ReferenceOr.value(
+                            Schema(
+                                type = Schema.Type.Basic.String
+                            )
+                        )
                     ),
                     Parameter(
                         name = "groupRule",
                         input = Parameter.Input.Query,
                         description = "The grouping rule to apply to the service definitions",
+                        schema = ReferenceOr.value(
+                            Schema(
+                                type = Schema.Type.Basic.String
+                            )
+                        )
                     )
                 ),
                 authenticationStrategy = DiscoveryGenerator.Companion.AuthenticationStrategy.OPTIONAL
             )
             operation(
+                id = "ServiceUpsert",
                 method = HttpMethod.Post,
                 locator = ServiceLocator("${config.server.baseLocator}DiscoveryEndpoint", ServiceMethods.UPSERT),
                 summary = "Create or update a service definition",
@@ -89,6 +105,7 @@ fun Application.discovery() {
         }
         path("/services/{id}") {
             operation(
+                id = "SpecificService",
                 method = HttpMethod.Get,
                 locator = ServiceLocator("${config.server.baseLocator}DiscoveryEndpoint", ServiceMethods.GATHER),
                 summary = "Get a specific service definition",
@@ -97,10 +114,16 @@ fun Application.discovery() {
                     Parameter(
                         name = "id",
                         input = Parameter.Input.Path,
+                        schema = ReferenceOr.value(
+                            Schema(
+                                type = Schema.Type.Basic.String
+                            )
+                        )
                     )
                 )
             )
             operation(
+                id = "DeleteService",
                 method = HttpMethod.Delete,
                 locator = ServiceLocator("${config.server.baseLocator}DiscoveryEndpoint", ServiceMethods.DELETE),
                 summary = "Delete a specific service definition",
@@ -109,12 +132,18 @@ fun Application.discovery() {
                     Parameter(
                         name = "id",
                         input = Parameter.Input.Path,
+                        schema = ReferenceOr.value(
+                            Schema(
+                                type = Schema.Type.Basic.String
+                            )
+                        )
                     )
                 )
             )
         }
         path("/services/scope/{scope}") {
             operation(
+                id = "ScopedServices",
                 method = HttpMethod.Get,
                 locator = ServiceLocator("${config.server.baseLocator}DiscoveryScope", ServiceMethods.GATHER),
                 summary = "Get all services linked to a specific scope",
@@ -123,6 +152,11 @@ fun Application.discovery() {
                     Parameter(
                         name = "scope",
                         input = Parameter.Input.Path,
+                        schema = ReferenceOr.value(
+                            Schema(
+                                type = Schema.Type.Basic.String
+                            )
+                        )
                     )
                 )
             )
@@ -132,10 +166,12 @@ fun Application.discovery() {
         authenticate(optional = true) {
             get("/services") {
                 val user: User? = call.authentication.principal()
-                val services = apiService.readForScope(null).toMutableList()
+                val services = apiService.readPublic()
+                    .toList() as MutableList
                 if (user != null) {
-                    val userServices = apiService.readForScopes(user.scopes)
-                    services.addAll(userServices)
+                    apiService.readForScopes(user.scopes).collect {
+                        services.add(it)
+                    }
                 }
                 val transformationType = ServiceDefinitionTransformationType.fromString(
                     call.request.queryParameters["transformationType"]
@@ -182,11 +218,12 @@ fun Application.discovery() {
                 val scope = call.parameters["scope"]
                 val user: User? = call.authentication.principal()
                 verify(user != null) { HttpStatusCode.Unauthorized to "You need to be Authenticated for this request!" }
+                verify(scope != null) { HttpStatusCode.BadRequest to "You must enter a Scope!" }
                 verify(user.access.superAdmin || user.scopes.contains(scope)) { HttpStatusCode.Forbidden to "You must be a member of the Scope you are trying to obtain!" }
-                val inDB = apiService.readForScope(scope)
+                val inDB = scope.let { apiService.readForScope(it) }
                 val discoveryResponse = DiscoveryResponse(
                     user,
-                    inDB.map { it.serviceDefinition },
+                    inDB.map { it.serviceDefinition }.toList(),
                 )
                 call.respond(discoveryResponse)
             }

@@ -26,6 +26,7 @@ data class APIServiceDTO @OptIn(ExperimentalUuidApi::class, ExperimentalTime::cl
     val catalystTransformable: Boolean = true,
     val explicitOnly: Boolean = false,
     val mcpEnabled: Boolean = true,
+    val builtin: Boolean = false,
     val preferredTransform: ServiceDefinitionTransformationType = ServiceDefinitionTransformationType.Auto,
 ) {
     fun transformOrNull(

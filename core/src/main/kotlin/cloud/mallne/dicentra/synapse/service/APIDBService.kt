@@ -1,16 +1,24 @@
 package cloud.mallne.dicentra.synapse.service
 
+import cloud.mallne.dicentra.aviator.koas.OpenAPI
 import cloud.mallne.dicentra.synapse.model.dto.APIServiceDTO
 import cloud.mallne.dicentra.synapse.statics.Serialization
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionTransformationType
-import cloud.mallne.dicentra.aviator.koas.OpenAPI
-import org.jetbrains.exposed.dao.id.EntityID
-import org.jetbrains.exposed.dao.id.IdTable
-import org.jetbrains.exposed.sql.*
-import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
-import org.jetbrains.exposed.sql.json.jsonb
-import org.jetbrains.exposed.sql.kotlin.datetime.CurrentDateTime
-import org.jetbrains.exposed.sql.kotlin.datetime.datetime
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.singleOrNull
+import org.jetbrains.exposed.v1.core.Column
+import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.v1.core.dao.id.EntityID
+import org.jetbrains.exposed.v1.core.dao.id.IdTable
+import org.jetbrains.exposed.v1.datetime.CurrentDateTime
+import org.jetbrains.exposed.v1.datetime.datetime
+import org.jetbrains.exposed.v1.json.jsonb
+import org.jetbrains.exposed.v1.r2dbc.SchemaUtils
+import org.jetbrains.exposed.v1.r2dbc.deleteWhere
+import org.jetbrains.exposed.v1.r2dbc.insert
+import org.jetbrains.exposed.v1.r2dbc.selectAll
+import org.jetbrains.exposed.v1.r2dbc.update
 import org.koin.core.annotation.Single
 
 /**
@@ -32,6 +40,7 @@ class APIDBService(private val databaseService: DatabaseService) {
         val nativeTransformable = bool("native_transformable").default(true)
         val catalystTransformable = bool("catalyst_transformable").default(true)
         val mcpEnabled = bool("mcp_enabled").default(true)
+        val builtin = bool("builtin").default(false)
         val preferredTransform = enumeration<ServiceDefinitionTransformationType>("preferred_transform").default(
             ServiceDefinitionTransformationType.Auto
         )
@@ -61,6 +70,7 @@ class APIDBService(private val databaseService: DatabaseService) {
             it[nativeTransformable] = apiService.nativeTransformable
             it[catalystTransformable] = apiService.catalystTransformable
             it[mcpEnabled] = apiService.mcpEnabled
+            it[builtin] = apiService.builtin
             it[preferredTransform] = apiService.preferredTransform
         }[APIServiceData.id].value
     }
@@ -84,6 +94,7 @@ class APIDBService(private val databaseService: DatabaseService) {
                         nativeTransformable = it[APIServiceData.nativeTransformable],
                         catalystTransformable = it[APIServiceData.catalystTransformable],
                         mcpEnabled = it[APIServiceData.mcpEnabled],
+                        builtin = it[APIServiceData.builtin],
                         preferredTransform = it[APIServiceData.preferredTransform],
                     )
                 }
@@ -97,7 +108,7 @@ class APIDBService(private val databaseService: DatabaseService) {
      * @param scope the scope string used to filter the API services. If null, services with no scope will be retrieved.
      * @return a list of `APIServiceDTO` objects that match the given scope. Returns an empty list if no matching records are found.
      */
-    suspend fun readForScope(scope: String?): List<APIServiceDTO> {
+    suspend fun readForScope(scope: String): Flow<APIServiceDTO> {
         return databaseService {
             APIServiceData.selectAll()
                 .where { APIServiceData.scope eq scope }
@@ -110,6 +121,33 @@ class APIDBService(private val databaseService: DatabaseService) {
                         nativeTransformable = it[APIServiceData.nativeTransformable],
                         catalystTransformable = it[APIServiceData.catalystTransformable],
                         mcpEnabled = it[APIServiceData.mcpEnabled],
+                        builtin = it[APIServiceData.builtin],
+                        preferredTransform = it[APIServiceData.preferredTransform],
+                    )
+                }
+        }
+    }
+
+    /**
+     * Retrieves a list of `APIServiceDTO` objects from the database that match the specified scope.
+     *
+     * @param scope the scope string used to filter the API services. If null, services with no scope will be retrieved.
+     * @return a list of `APIServiceDTO` objects that match the given scope. Returns an empty list if no matching records are found.
+     */
+    suspend fun readPublic(): Flow<APIServiceDTO> {
+        return databaseService {
+            APIServiceData.selectAll()
+                .where { APIServiceData.scope eq null }
+                .map {
+                    APIServiceDTO(
+                        it[APIServiceData.id].value,
+                        it[APIServiceData.service],
+                        it[APIServiceData.scope],
+                        created = it[APIServiceData.created],
+                        nativeTransformable = it[APIServiceData.nativeTransformable],
+                        catalystTransformable = it[APIServiceData.catalystTransformable],
+                        mcpEnabled = it[APIServiceData.mcpEnabled],
+                        builtin = it[APIServiceData.builtin],
                         preferredTransform = it[APIServiceData.preferredTransform],
                     )
                 }
@@ -124,7 +162,7 @@ class APIDBService(private val databaseService: DatabaseService) {
      * @return a list of `APIServiceDTO` objects that match the provided scopes. If no services
      *         match, an empty list is returned.
      */
-    suspend fun readForScopes(scope: List<String>): List<APIServiceDTO> {
+    suspend fun readForScopes(scope: List<String>): Flow<APIServiceDTO> {
         return databaseService {
             APIServiceData.selectAll()
                 .where { APIServiceData.scope inList scope }
@@ -137,6 +175,27 @@ class APIDBService(private val databaseService: DatabaseService) {
                         nativeTransformable = it[APIServiceData.nativeTransformable],
                         catalystTransformable = it[APIServiceData.catalystTransformable],
                         mcpEnabled = it[APIServiceData.mcpEnabled],
+                        builtin = it[APIServiceData.builtin],
+                        preferredTransform = it[APIServiceData.preferredTransform],
+                    )
+                }
+        }
+    }
+
+    suspend fun readBuiltin(): Flow<APIServiceDTO> {
+        return databaseService {
+            APIServiceData.selectAll()
+                .where { APIServiceData.builtin eq true }
+                .map {
+                    APIServiceDTO(
+                        it[APIServiceData.id].value,
+                        it[APIServiceData.service],
+                        it[APIServiceData.scope],
+                        created = it[APIServiceData.created],
+                        nativeTransformable = it[APIServiceData.nativeTransformable],
+                        catalystTransformable = it[APIServiceData.catalystTransformable],
+                        mcpEnabled = it[APIServiceData.mcpEnabled],
+                        builtin = it[APIServiceData.builtin],
                         preferredTransform = it[APIServiceData.preferredTransform],
                     )
                 }
@@ -158,6 +217,7 @@ class APIDBService(private val databaseService: DatabaseService) {
                 it[nativeTransformable] = apiService.nativeTransformable
                 it[catalystTransformable] = apiService.catalystTransformable
                 it[mcpEnabled] = apiService.mcpEnabled
+                it[builtin] = apiService.builtin
                 it[preferredTransform] = apiService.preferredTransform
             }
         }
@@ -170,7 +230,7 @@ class APIDBService(private val databaseService: DatabaseService) {
      */
     suspend fun delete(id: String) {
         databaseService {
-            APIServiceData.deleteWhere { APIServiceData.id.eq(id) }
+            APIServiceData.deleteWhere { APIServiceData.id eq id }
         }
     }
 }

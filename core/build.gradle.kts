@@ -22,7 +22,7 @@ dependencies {
     api(libs.ktor.serialization.kotlinx.json)
     api(libs.ktor.server.content.negotiation)
     api(libs.exposed.core)
-    api(libs.exposed.jdbc)
+    api(libs.exposed.rdbc)
     api(libs.exposed.json)
     api(libs.exposed.datetime)
     api(libs.postgres)
@@ -43,6 +43,7 @@ dependencies {
     api(libs.logback.classic)
     api(libs.kotlinx.datetime)
     api(libs.ktor.server.config.yaml)
+    runtimeOnly(libs.postgres.jdbc)
 
     //aviator
     api(libs.dc.aviator.client.ktor)

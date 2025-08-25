@@ -14,6 +14,7 @@ import io.ktor.server.application.*
 import io.ktor.server.auth.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlinx.coroutines.flow.toList
 import org.koin.ktor.ext.inject
 
 fun Application.catalyst() {
@@ -24,10 +25,11 @@ fun Application.catalyst() {
         authenticate(optional = true) {
             get("/catalyst") {
                 val user: User? = call.authentication.principal()
-                    val services = apiService.readForScope(null).toMutableList()
+                    val services = apiService.readPublic().toList().toMutableList()
                     if (user != null) {
-                        val userServices = apiService.readForScopes(user.scopes)
-                        services.addAll(userServices)
+                        apiService.readForScopes(user.scopes).collect {
+                            services.add(it)
+                        }
                     }
                     val transformationType = ServiceDefinitionTransformationType.fromString(
                         call.request.queryParameters["transformationType"]

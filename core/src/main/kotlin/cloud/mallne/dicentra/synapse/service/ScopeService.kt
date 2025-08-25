@@ -1,11 +1,14 @@
 package cloud.mallne.dicentra.synapse.service
 
 import cloud.mallne.dicentra.synapse.model.dto.ScopeDTO
-import org.jetbrains.exposed.dao.id.IntIdTable
-import org.jetbrains.exposed.sql.*
-import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
-import org.jetbrains.exposed.sql.kotlin.datetime.CurrentDateTime
-import org.jetbrains.exposed.sql.kotlin.datetime.datetime
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.singleOrNull
+import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.v1.core.dao.id.IntIdTable
+import org.jetbrains.exposed.v1.datetime.CurrentDateTime
+import org.jetbrains.exposed.v1.datetime.datetime
+import org.jetbrains.exposed.v1.r2dbc.*
 import org.koin.core.annotation.Single
 
 /**
@@ -69,7 +72,7 @@ class ScopeService(private val databaseService: DatabaseService) {
      * @param attachment the attachment identifier used to filter the scopes in the database.
      * @return a list of `ScopeDTO` objects with the specified attachment.
      */
-    suspend fun readForAttachment(attachment: String): List<ScopeDTO> {
+    suspend fun readForAttachment(attachment: String): Flow<ScopeDTO> {
         return databaseService {
             Scopes.selectAll()
                 .where { Scopes.attaches eq attachment }
@@ -83,7 +86,7 @@ class ScopeService(private val databaseService: DatabaseService) {
      * @param name the name of the scope to filter for in the database.
      * @return a list of `ScopeDTO` objects that have the specified name.
      */
-    suspend fun readForName(name: String): List<ScopeDTO> {
+    suspend fun readForName(name: String): Flow<ScopeDTO> {
         return databaseService {
             Scopes.selectAll()
                 .where { Scopes.name eq name }

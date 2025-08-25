@@ -39,6 +39,7 @@ class DiscoveryGenerator(
     }
 
     fun operation(
+        id: String,
         locator: ServiceLocator,
         summary: String? = null,
         description: String? = null,
@@ -46,6 +47,8 @@ class DiscoveryGenerator(
         options: InflatedServiceOptions = InflatedServiceOptions.empty,
         authenticationStrategy: AuthenticationStrategy = AuthenticationStrategy.NONE,
     ): Operation {
+
+        parameter.toMutableList()
 
         val securityReq: List<SecurityRequirement> = when (authenticationStrategy) {
             AuthenticationStrategy.MANDATORY -> {
@@ -60,6 +63,7 @@ class DiscoveryGenerator(
         }
 
         return Operation(
+            operationId = id,
             parameters = parameter.map { ReferenceOr.Value(it) },
             summary = summary,
             description = description,
@@ -78,7 +82,7 @@ class DiscoveryGenerator(
                 "bearerAuth" to ReferenceOr.Value(
                     SecurityScheme(
                         type = SecurityScheme.Type.HTTP,
-                        scheme = "bearer",
+                        scheme = "Bearer",
                         bearerFormat = "JWT"
                     )
                 )
@@ -159,6 +163,7 @@ class DiscoveryGenerator(
 
         interface OperationDiscoveryDSL {
             fun operation(
+                id: String,
                 method: HttpMethod,
                 locator: ServiceLocator,
                 summary: String? = null,
@@ -174,6 +179,7 @@ class DiscoveryGenerator(
             val operations: MutableMap<HttpMethod, Operation> = mutableMapOf()
         ) : OperationDiscoveryDSL {
             override fun operation(
+                id: String,
                 method: HttpMethod,
                 locator: ServiceLocator,
                 summary: String?,
@@ -183,7 +189,7 @@ class DiscoveryGenerator(
                 authenticationStrategy: AuthenticationStrategy
             ) {
                 operations[method] =
-                    generator.operation(locator, summary, description, parameter, options, authenticationStrategy)
+                    generator.operation(id, locator, summary, description, parameter, options, authenticationStrategy)
             }
 
         }

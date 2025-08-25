@@ -1,6 +1,8 @@
 package cloud.mallne.dicentra.synapse.routes
 
 import cloud.mallne.dicentra.aviator.core.ServiceMethods
+import cloud.mallne.dicentra.aviator.koas.extensions.ReferenceOr
+import cloud.mallne.dicentra.aviator.koas.io.Schema
 import cloud.mallne.dicentra.aviator.koas.parameters.Parameter
 import cloud.mallne.dicentra.aviator.model.ServiceLocator
 import cloud.mallne.dicentra.synapse.model.Configuration
@@ -15,6 +17,8 @@ import io.ktor.server.auth.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.toList
 import org.koin.ktor.ext.inject
 import kotlin.getValue
 
@@ -45,6 +49,7 @@ fun Application.scope() {
     discoveryGenerator.memorize {
         path("/scope/{scope}") {
             operation(
+                id = "SpecificScope",
                 method = HttpMethod.Get,
                 locator = ServiceLocator("${config.server.baseLocator}Scope", ServiceMethods.GATHER),
                 authenticationStrategy = DiscoveryGenerator.Companion.AuthenticationStrategy.MANDATORY,
@@ -53,10 +58,16 @@ fun Application.scope() {
                     Parameter(
                         name = "scope",
                         input = Parameter.Input.Path,
+                        schema = ReferenceOr.value(
+                            Schema(
+                                type = Schema.Type.Basic.String
+                            )
+                        )
                     )
                 )
             )
             operation(
+                id = "DeleteScope",
                 method = HttpMethod.Delete,
                 locator = ServiceLocator("${config.server.baseLocator}Scope", ServiceMethods.DELETE),
                 authenticationStrategy = DiscoveryGenerator.Companion.AuthenticationStrategy.MANDATORY,
@@ -65,12 +76,18 @@ fun Application.scope() {
                     Parameter(
                         name = "scope",
                         input = Parameter.Input.Path,
+                        schema = ReferenceOr.value(
+                            Schema(
+                                type = Schema.Type.Basic.String
+                            )
+                        )
                     )
                 )
             )
         }
         path("/scope") {
             operation(
+                id = "CreateScope",
                 method = HttpMethod.Post,
                 locator = ServiceLocator("${config.server.baseLocator}Scope", ServiceMethods.CREATE),
                 authenticationStrategy = DiscoveryGenerator.Companion.AuthenticationStrategy.MANDATORY,
@@ -90,7 +107,7 @@ fun Application.scope() {
                 val scopes = scopeService.readForName(scope)
                 val response = ScopeRequest(
                     name = scope,
-                    attachments = scopes.map { it.attaches }
+                    attachments = scopes.map { it.attaches }.toList()
                 )
                 call.respond(response)
             }
@@ -109,7 +126,7 @@ fun Application.scope() {
                 verify(user != null) { HttpStatusCode.Unauthorized to "You need to be Authenticated for this request!" }
                 verify(user.access.admin || user.access.superAdmin) { HttpStatusCode.Forbidden to "You must be at least admin for this request!" }
                 verify(user.access.superAdmin || user.scopes.contains(body.name) || body.attachments.contains(user.userScope)) { HttpStatusCode.Forbidden to "You must be a member of the Scope you are trying to create!" }
-                val already = scopeService.readForName(body.name)
+                val already = scopeService.readForName(body.name).toList()
                 verify(already.isNotEmpty()) { HttpStatusCode.Conflict to "The Scope '${body.name}' already exists!" }
                 val scopes = body.toDTO()
                 for (scope in scopes) {

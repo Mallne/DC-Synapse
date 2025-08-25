@@ -29,6 +29,7 @@ fun Application.user() {
     discoveryGenerator.memorize {
         path("/user") {
             operation(
+                id = "Userinformation",
                 method = HttpMethod.Get,
                 locator = ServiceLocator("${config.server.baseLocator}User", ServiceMethods.GATHER),
                 authenticationStrategy = DiscoveryGenerator.Companion.AuthenticationStrategy.MANDATORY,
