@@ -37,7 +37,7 @@ private fun isStable(version: String): Boolean {
 }
 
 private fun isBeta(version: String): Boolean {
-    val stableKeyword = listOf("BETA").any { version.uppercase(Locale.getDefault()).contains(it) }
+    val stableKeyword = listOf("BETA", "RC").any { version.uppercase(Locale.getDefault()).contains(it) }
     return stableKeyword
 }
 
