@@ -33,13 +33,13 @@ data class IntrospectionResponse(
     @SerialName("client_id")
     val clientId: String,
 ) {
-    fun toUser(config: Configuration.Nested.SecurityConfiguration, scopes: List<String>): User {
+    fun toUser(config: Configuration.Nested.SecurityConfiguration): User {
         val acl = User.AccessLevels(
             config.groups.user in groups,
             config.groups.admin in groups,
             config.groups.superAdmin in groups
         )
         val locked = config.enabled && !active && !emailVerified
-        return User(name, email, preferredUsername, locked, acl, scopes)
+        return User(name, email, preferredUsername, locked, acl)
     }
 }

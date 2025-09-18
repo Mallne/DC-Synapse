@@ -8,19 +8,16 @@ import cloud.mallne.dicentra.aviator.model.ServiceLocator
 import cloud.mallne.dicentra.synapse.model.Configuration
 import cloud.mallne.dicentra.synapse.model.ScopeRequest
 import cloud.mallne.dicentra.synapse.model.User
+import cloud.mallne.dicentra.synapse.service.DatabaseService
 import cloud.mallne.dicentra.synapse.service.DiscoveryGenerator
 import cloud.mallne.dicentra.synapse.service.ScopeService
 import cloud.mallne.dicentra.synapse.statics.verify
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
-import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.toList
 import org.koin.ktor.ext.inject
-import kotlin.getValue
 
 /**
  * Configures routing for scope-related operations and handles requests for creating, reading, and deleting scopes.
@@ -45,6 +42,7 @@ fun Application.scope() {
     val scopeService by inject<ScopeService>()
     val discoveryGenerator by inject<DiscoveryGenerator>()
     val config by inject<Configuration>()
+    val db by inject<DatabaseService>()
 
     discoveryGenerator.memorize {
         path("/scope/{scope}") {
@@ -104,12 +102,15 @@ fun Application.scope() {
                 verify(user != null) { HttpStatusCode.Unauthorized to "You need to be Authenticated for this request!" }
                 verify(user.access.admin || user.access.superAdmin) { HttpStatusCode.Forbidden to "You must be at least admin for this request!" }
                 verify(user.access.superAdmin || user.scopes.contains(scope)) { HttpStatusCode.Forbidden to "You must be a member of the Scope you are trying to obtain!" }
-                val scopes = scopeService.readForName(scope)
-                val response = ScopeRequest(
-                    name = scope,
-                    attachments = scopes.map { it.attaches }.toList()
-                )
-                call.respond(response)
+                db {
+                    user.attachScopes(scopeService)
+                    val scopes = scopeService.readForName(scope)
+                    val response = ScopeRequest(
+                        name = scope,
+                        attachments = scopes.map { it.attaches }.toList()
+                    )
+                    call.respond(response)
+                }
             }
             delete("/scope/{scope}") {
                 val scope = call.parameters["scope"]
@@ -118,7 +119,10 @@ fun Application.scope() {
                 verify(user != null) { HttpStatusCode.Unauthorized to "You need to be Authenticated for this request!" }
                 verify(user.access.admin || user.access.superAdmin) { HttpStatusCode.Forbidden to "You must be at least admin for this request!" }
                 verify(user.access.superAdmin || user.scopes.contains(scope)) { HttpStatusCode.Forbidden to "You must be a member of the Scope you are trying to obtain!" }
-                scopeService.deleteByName(scope)
+                db {
+                    user.attachScopes(scopeService)
+                    scopeService.deleteByName(scope)
+                }
                 call.respond(scope)
             }
             post<ScopeRequest>("/scope") { body ->
@@ -126,13 +130,16 @@ fun Application.scope() {
                 verify(user != null) { HttpStatusCode.Unauthorized to "You need to be Authenticated for this request!" }
                 verify(user.access.admin || user.access.superAdmin) { HttpStatusCode.Forbidden to "You must be at least admin for this request!" }
                 verify(user.access.superAdmin || user.scopes.contains(body.name) || body.attachments.contains(user.userScope)) { HttpStatusCode.Forbidden to "You must be a member of the Scope you are trying to create!" }
-                val already = scopeService.readForName(body.name).toList()
-                verify(already.isNotEmpty()) { HttpStatusCode.Conflict to "The Scope '${body.name}' already exists!" }
-                val scopes = body.toDTO()
-                for (scope in scopes) {
-                    scopeService.create(scope)
+                db {
+                    user.attachScopes(scopeService)
+                    val already = scopeService.readForName(body.name).toList()
+                    verify(already.isNotEmpty()) { HttpStatusCode.Conflict to "The Scope '${body.name}' already exists!" }
+                    val scopes = body.toDTO()
+                    for (scope in scopes) {
+                        scopeService.create(scope)
+                    }
+                    call.respond(body)
                 }
-                call.respond(body)
             }
         }
     }

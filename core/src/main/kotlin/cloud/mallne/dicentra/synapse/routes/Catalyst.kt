@@ -6,30 +6,31 @@ import cloud.mallne.dicentra.synapse.model.User
 import cloud.mallne.dicentra.synapse.model.dto.APIServiceDTO.Companion.transform
 import cloud.mallne.dicentra.synapse.service.APIDBService
 import cloud.mallne.dicentra.synapse.service.CatalystGenerator
+import cloud.mallne.dicentra.synapse.service.DatabaseService
+import cloud.mallne.dicentra.synapse.service.ScopeService
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionGroupRule
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionTransformationType
-import cloud.mallne.dicentra.synapse.statics.verify
-import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
-import kotlinx.coroutines.flow.toList
 import org.koin.ktor.ext.inject
 
 fun Application.catalyst() {
     val config by inject<Configuration>()
     val catalystGenerator by inject<CatalystGenerator>()
     val apiService by inject<APIDBService>()
+    val scopeService by inject<ScopeService>()
+    val db by inject<DatabaseService>()
     routing {
         authenticate(optional = true) {
             get("/catalyst") {
                 val user: User? = call.authentication.principal()
+                db {
+                    user?.attachScopes(scopeService)
                     val services = apiService.readPublic().toList().toMutableList()
                     if (user != null) {
-                        apiService.readForScopes(user.scopes).collect {
-                            services.add(it)
-                        }
+                        services.addAll(apiService.readForScopes(user.scopes))
                     }
                     val transformationType = ServiceDefinitionTransformationType.fromString(
                         call.request.queryParameters["transformationType"]
@@ -50,6 +51,7 @@ fun Application.catalyst() {
                         definitions,
                     )
                     call.respond(response)
+                }
             }
         }
     }

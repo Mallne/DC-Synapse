@@ -1,20 +1,21 @@
 package cloud.mallne.dicentra.synapse.service
 
 import cloud.mallne.dicentra.aviator.koas.OpenAPI
+import cloud.mallne.dicentra.synapse.model.RequiresTransactionContext
 import cloud.mallne.dicentra.synapse.model.dto.APIServiceDTO
 import cloud.mallne.dicentra.synapse.statics.Serialization
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionTransformationType
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.singleOrNull
+import kotlinx.coroutines.flow.toList
 import org.jetbrains.exposed.v1.core.Column
-import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.v1.core.dao.id.EntityID
 import org.jetbrains.exposed.v1.core.dao.id.IdTable
+import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.core.inList
 import org.jetbrains.exposed.v1.datetime.CurrentDateTime
 import org.jetbrains.exposed.v1.datetime.datetime
 import org.jetbrains.exposed.v1.json.jsonb
-import org.jetbrains.exposed.v1.r2dbc.SchemaUtils
 import org.jetbrains.exposed.v1.r2dbc.deleteWhere
 import org.jetbrains.exposed.v1.r2dbc.insert
 import org.jetbrains.exposed.v1.r2dbc.selectAll
@@ -28,11 +29,9 @@ import org.koin.core.annotation.Single
  *
  * @constructor Initializes the APIDBService with the given `DatabaseService` and ensures
  *              the underlying database table schema is created during initialization.
- *
- * @param databaseService The database service used for executing transactional operations.
  */
 @Single
-class APIDBService(private val databaseService: DatabaseService) {
+class APIDBService() {
     object APIServiceData : IdTable<String>() {
         val service = jsonb<OpenAPI>("service", Serialization())
         val scope = varchar("scope", 255).nullable()
@@ -47,12 +46,6 @@ class APIDBService(private val databaseService: DatabaseService) {
         override val id: Column<EntityID<String>> = varchar("id", 36).entityId()
     }
 
-    init {
-        databaseService.transaction {
-            SchemaUtils.create(APIServiceData)
-        }
-    }
-
     /**
      * Creates a new API service record in the database and returns its generated ID.
      *
@@ -61,7 +54,8 @@ class APIDBService(private val databaseService: DatabaseService) {
      *                   and optional scope.
      * @return the ID of the newly created API service record as a string.
      */
-    suspend fun create(apiService: APIServiceDTO): String = databaseService {
+    @RequiresTransactionContext
+    suspend fun create(apiService: APIServiceDTO): String =
         APIServiceData.insert {
             it[id] = apiService.id
             it[service] = apiService.serviceDefinition
@@ -73,7 +67,6 @@ class APIDBService(private val databaseService: DatabaseService) {
             it[builtin] = apiService.builtin
             it[preferredTransform] = apiService.preferredTransform
         }[APIServiceData.id].value
-    }
 
     /**
      * Retrieves a single API service record from the database based on the specified ID.
@@ -81,25 +74,24 @@ class APIDBService(private val databaseService: DatabaseService) {
      * @param id the unique identifier of the API service to be retrieved.
      * @return an `APIServiceDTO` object representing the retrieved API service if found, or `null` if no matching record exists.
      */
+    @RequiresTransactionContext
     suspend fun read(id: String): APIServiceDTO? {
-        return databaseService {
-            APIServiceData.selectAll()
-                .where { APIServiceData.id eq id }
-                .map {
-                    APIServiceDTO(
-                        id = it[APIServiceData.id].value,
-                        serviceDefinition = it[APIServiceData.service],
-                        scope = it[APIServiceData.scope],
-                        created = it[APIServiceData.created],
-                        nativeTransformable = it[APIServiceData.nativeTransformable],
-                        catalystTransformable = it[APIServiceData.catalystTransformable],
-                        mcpEnabled = it[APIServiceData.mcpEnabled],
-                        builtin = it[APIServiceData.builtin],
-                        preferredTransform = it[APIServiceData.preferredTransform],
-                    )
-                }
-                .singleOrNull()
-        }
+        return APIServiceData.selectAll()
+            .where { APIServiceData.id eq id }
+            .map {
+                APIServiceDTO(
+                    id = it[APIServiceData.id].value,
+                    serviceDefinition = it[APIServiceData.service],
+                    scope = it[APIServiceData.scope],
+                    created = it[APIServiceData.created],
+                    nativeTransformable = it[APIServiceData.nativeTransformable],
+                    catalystTransformable = it[APIServiceData.catalystTransformable],
+                    mcpEnabled = it[APIServiceData.mcpEnabled],
+                    builtin = it[APIServiceData.builtin],
+                    preferredTransform = it[APIServiceData.preferredTransform],
+                )
+            }
+            .singleOrNull()
     }
 
     /**
@@ -108,50 +100,49 @@ class APIDBService(private val databaseService: DatabaseService) {
      * @param scope the scope string used to filter the API services. If null, services with no scope will be retrieved.
      * @return a list of `APIServiceDTO` objects that match the given scope. Returns an empty list if no matching records are found.
      */
-    suspend fun readForScope(scope: String): Flow<APIServiceDTO> {
-        return databaseService {
-            APIServiceData.selectAll()
-                .where { APIServiceData.scope eq scope }
-                .map {
-                    APIServiceDTO(
-                        it[APIServiceData.id].value,
-                        it[APIServiceData.service],
-                        it[APIServiceData.scope],
-                        created = it[APIServiceData.created],
-                        nativeTransformable = it[APIServiceData.nativeTransformable],
-                        catalystTransformable = it[APIServiceData.catalystTransformable],
-                        mcpEnabled = it[APIServiceData.mcpEnabled],
-                        builtin = it[APIServiceData.builtin],
-                        preferredTransform = it[APIServiceData.preferredTransform],
-                    )
-                }
-        }
+    @RequiresTransactionContext
+    suspend fun readForScope(scope: String): List<APIServiceDTO> {
+        return APIServiceData.selectAll()
+            .where { APIServiceData.scope eq scope }
+            .map {
+                APIServiceDTO(
+                    it[APIServiceData.id].value,
+                    it[APIServiceData.service],
+                    it[APIServiceData.scope],
+                    created = it[APIServiceData.created],
+                    nativeTransformable = it[APIServiceData.nativeTransformable],
+                    catalystTransformable = it[APIServiceData.catalystTransformable],
+                    mcpEnabled = it[APIServiceData.mcpEnabled],
+                    builtin = it[APIServiceData.builtin],
+                    preferredTransform = it[APIServiceData.preferredTransform],
+                )
+            }
+            .toList()
     }
 
     /**
      * Retrieves a list of `APIServiceDTO` objects from the database that match the specified scope.
      *
-     * @param scope the scope string used to filter the API services. If null, services with no scope will be retrieved.
      * @return a list of `APIServiceDTO` objects that match the given scope. Returns an empty list if no matching records are found.
      */
-    suspend fun readPublic(): Flow<APIServiceDTO> {
-        return databaseService {
-            APIServiceData.selectAll()
-                .where { APIServiceData.scope eq null }
-                .map {
-                    APIServiceDTO(
-                        it[APIServiceData.id].value,
-                        it[APIServiceData.service],
-                        it[APIServiceData.scope],
-                        created = it[APIServiceData.created],
-                        nativeTransformable = it[APIServiceData.nativeTransformable],
-                        catalystTransformable = it[APIServiceData.catalystTransformable],
-                        mcpEnabled = it[APIServiceData.mcpEnabled],
-                        builtin = it[APIServiceData.builtin],
-                        preferredTransform = it[APIServiceData.preferredTransform],
-                    )
-                }
-        }
+    @RequiresTransactionContext
+    suspend fun readPublic(): List<APIServiceDTO> {
+        return APIServiceData.selectAll()
+            .where { APIServiceData.scope eq null }
+            .map {
+                APIServiceDTO(
+                    it[APIServiceData.id].value,
+                    it[APIServiceData.service],
+                    it[APIServiceData.scope],
+                    created = it[APIServiceData.created],
+                    nativeTransformable = it[APIServiceData.nativeTransformable],
+                    catalystTransformable = it[APIServiceData.catalystTransformable],
+                    mcpEnabled = it[APIServiceData.mcpEnabled],
+                    builtin = it[APIServiceData.builtin],
+                    preferredTransform = it[APIServiceData.preferredTransform],
+                )
+            }
+            .toList()
     }
 
     /**
@@ -162,44 +153,44 @@ class APIDBService(private val databaseService: DatabaseService) {
      * @return a list of `APIServiceDTO` objects that match the provided scopes. If no services
      *         match, an empty list is returned.
      */
-    suspend fun readForScopes(scope: List<String>): Flow<APIServiceDTO> {
-        return databaseService {
-            APIServiceData.selectAll()
-                .where { APIServiceData.scope inList scope }
-                .map {
-                    APIServiceDTO(
-                        it[APIServiceData.id].value,
-                        it[APIServiceData.service],
-                        it[APIServiceData.scope],
-                        created = it[APIServiceData.created],
-                        nativeTransformable = it[APIServiceData.nativeTransformable],
-                        catalystTransformable = it[APIServiceData.catalystTransformable],
-                        mcpEnabled = it[APIServiceData.mcpEnabled],
-                        builtin = it[APIServiceData.builtin],
-                        preferredTransform = it[APIServiceData.preferredTransform],
-                    )
-                }
-        }
+    @RequiresTransactionContext
+    suspend fun readForScopes(scope: List<String>): List<APIServiceDTO> {
+        return APIServiceData.selectAll()
+            .where { APIServiceData.scope inList scope }
+            .map {
+                APIServiceDTO(
+                    it[APIServiceData.id].value,
+                    it[APIServiceData.service],
+                    it[APIServiceData.scope],
+                    created = it[APIServiceData.created],
+                    nativeTransformable = it[APIServiceData.nativeTransformable],
+                    catalystTransformable = it[APIServiceData.catalystTransformable],
+                    mcpEnabled = it[APIServiceData.mcpEnabled],
+                    builtin = it[APIServiceData.builtin],
+                    preferredTransform = it[APIServiceData.preferredTransform],
+                )
+            }
+            .toList()
     }
 
-    suspend fun readBuiltin(): Flow<APIServiceDTO> {
-        return databaseService {
-            APIServiceData.selectAll()
-                .where { APIServiceData.builtin eq true }
-                .map {
-                    APIServiceDTO(
-                        it[APIServiceData.id].value,
-                        it[APIServiceData.service],
-                        it[APIServiceData.scope],
-                        created = it[APIServiceData.created],
-                        nativeTransformable = it[APIServiceData.nativeTransformable],
-                        catalystTransformable = it[APIServiceData.catalystTransformable],
-                        mcpEnabled = it[APIServiceData.mcpEnabled],
-                        builtin = it[APIServiceData.builtin],
-                        preferredTransform = it[APIServiceData.preferredTransform],
-                    )
-                }
-        }
+    @RequiresTransactionContext
+    suspend fun readBuiltin(): List<APIServiceDTO> {
+        return APIServiceData.selectAll()
+            .where { APIServiceData.builtin eq true }
+            .map {
+                APIServiceDTO(
+                    it[APIServiceData.id].value,
+                    it[APIServiceData.service],
+                    it[APIServiceData.scope],
+                    created = it[APIServiceData.created],
+                    nativeTransformable = it[APIServiceData.nativeTransformable],
+                    catalystTransformable = it[APIServiceData.catalystTransformable],
+                    mcpEnabled = it[APIServiceData.mcpEnabled],
+                    builtin = it[APIServiceData.builtin],
+                    preferredTransform = it[APIServiceData.preferredTransform],
+                )
+            }
+            .toList()
     }
 
     /**
@@ -209,17 +200,16 @@ class APIDBService(private val databaseService: DatabaseService) {
      *                   including the service's unique identifier, new service definition,
      *                   and optional scope.
      */
+    @RequiresTransactionContext
     suspend fun update(apiService: APIServiceDTO) {
-        databaseService {
-            APIServiceData.update({ APIServiceData.id eq apiService.id }) {
-                it[service] = apiService.serviceDefinition
-                it[scope] = apiService.scope
-                it[nativeTransformable] = apiService.nativeTransformable
-                it[catalystTransformable] = apiService.catalystTransformable
-                it[mcpEnabled] = apiService.mcpEnabled
-                it[builtin] = apiService.builtin
-                it[preferredTransform] = apiService.preferredTransform
-            }
+        APIServiceData.update({ APIServiceData.id eq apiService.id }) {
+            it[service] = apiService.serviceDefinition
+            it[scope] = apiService.scope
+            it[nativeTransformable] = apiService.nativeTransformable
+            it[catalystTransformable] = apiService.catalystTransformable
+            it[mcpEnabled] = apiService.mcpEnabled
+            it[builtin] = apiService.builtin
+            it[preferredTransform] = apiService.preferredTransform
         }
     }
 
@@ -228,9 +218,8 @@ class APIDBService(private val databaseService: DatabaseService) {
      *
      * @param id the unique identifier of the API service to be deleted.
      */
+    @RequiresTransactionContext
     suspend fun delete(id: String) {
-        databaseService {
-            APIServiceData.deleteWhere { APIServiceData.id eq id }
-        }
+        APIServiceData.deleteWhere { APIServiceData.id eq id }
     }
 }

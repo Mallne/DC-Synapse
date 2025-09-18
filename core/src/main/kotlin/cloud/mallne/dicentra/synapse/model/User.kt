@@ -12,8 +12,15 @@ data class User(
     val username: String,
     val locked: Boolean = false,
     val access: AccessLevels,
-    private val dbScopes: List<String>
 ) {
+    private var dbScopes: List<String> = listOf()
+
+    @RequiresTransactionContext
+    suspend fun attachScopes(scopeService: ScopeService) {
+        dbScopes = scopeService.readForAttachment(ScopeService.user(username))
+            .map { it.name }
+    }
+
     val valid
         get() = !locked && access.any()
     val scopes

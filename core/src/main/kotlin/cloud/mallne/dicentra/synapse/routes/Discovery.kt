@@ -10,9 +10,7 @@ import cloud.mallne.dicentra.synapse.model.DiscoveryRequest
 import cloud.mallne.dicentra.synapse.model.DiscoveryResponse
 import cloud.mallne.dicentra.synapse.model.User
 import cloud.mallne.dicentra.synapse.model.dto.APIServiceDTO.Companion.transform
-import cloud.mallne.dicentra.synapse.service.APIDBService
-import cloud.mallne.dicentra.synapse.service.CatalystGenerator
-import cloud.mallne.dicentra.synapse.service.DiscoveryGenerator
+import cloud.mallne.dicentra.synapse.service.*
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionGroupRule
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionTransformationType
 import cloud.mallne.dicentra.synapse.statics.verify
@@ -21,8 +19,6 @@ import io.ktor.server.application.*
 import io.ktor.server.auth.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.toList
 import org.koin.ktor.ext.inject
 
 /**
@@ -63,6 +59,8 @@ fun Application.discovery() {
     val apiService by inject<APIDBService>()
     val discoveryGenerator by inject<DiscoveryGenerator>()
     val config by inject<Configuration>()
+    val scopeService by inject<ScopeService>()
+    val db by inject<DatabaseService>()
 
     discoveryGenerator.memorize {
         path("/services") {
@@ -166,34 +164,35 @@ fun Application.discovery() {
         authenticate(optional = true) {
             get("/services") {
                 val user: User? = call.authentication.principal()
-                val services = apiService.readPublic()
-                    .toList() as MutableList
-                if (user != null) {
-                    apiService.readForScopes(user.scopes).collect {
-                        services.add(it)
+                db {
+                    user?.attachScopes(scopeService)
+                    val services = apiService.readPublic()
+                        .toMutableList()
+                    if (user != null) {
+                        services.addAll(apiService.readForScopes(user.scopes))
                     }
+                    val transformationType = ServiceDefinitionTransformationType.fromString(
+                        call.request.queryParameters["transformationType"]
+                            ?: ServiceDefinitionTransformationType.Auto.name
+                    )
+
+                    val groupRule = ServiceDefinitionGroupRule.fromString(
+                        call.request.queryParameters["groupRule"]
+                            ?: ServiceDefinitionGroupRule.ServiceLocator.name
+                    )
+                    val thisServer = discoveryGenerator.memory.build()
+
+                    val definitions = services.transform(
+                        requestedTransformationType = transformationType,
+                        requestedRule = groupRule,
+                        catalystGenerator = catalystGenerator,
+                    ) + thisServer
+                    val response = DiscoveryResponse(
+                        user,
+                        definitions,
+                    )
+                    call.respond(response)
                 }
-                val transformationType = ServiceDefinitionTransformationType.fromString(
-                    call.request.queryParameters["transformationType"]
-                        ?: ServiceDefinitionTransformationType.Auto.name
-                )
-
-                val groupRule = ServiceDefinitionGroupRule.fromString(
-                    call.request.queryParameters["groupRule"]
-                        ?: ServiceDefinitionGroupRule.ServiceLocator.name
-                )
-                val thisServer = discoveryGenerator.memory.build()
-
-                val definitions = services.transform(
-                    requestedTransformationType = transformationType,
-                    requestedRule = groupRule,
-                    catalystGenerator = catalystGenerator,
-                ) + thisServer
-                val response = DiscoveryResponse(
-                    user,
-                    definitions,
-                )
-                call.respond(response)
             }
         }
         authenticate(optional = false) {
@@ -201,72 +200,84 @@ fun Application.discovery() {
                 val id = call.parameters["id"]
                 verify(id != null) { HttpStatusCode.BadRequest to "You must enter an ID!" }
                 val user: User? = call.authentication.principal()
-                verify(user != null) { HttpStatusCode.Unauthorized to "You need to be Authenticated for this request!" }
-                val inDB = apiService.read(id)
-                verify(inDB != null) { HttpStatusCode.NotFound to "No Service Definition with this ID present!" }
-                verify(inDB.scope == null || user.scopes.contains(inDB.scope)) {
-                    HttpStatusCode.Forbidden to "You must be a member of the Scope of the Service Definition you are trying to obtain!"
+                db {
+                    user?.attachScopes(scopeService)
+                    verify(user != null) { HttpStatusCode.Unauthorized to "You need to be Authenticated for this request!" }
+                    val inDB = apiService.read(id)
+                    verify(inDB != null) { HttpStatusCode.NotFound to "No Service Definition with this ID present!" }
+                    verify(inDB.scope == null || user.scopes.contains(inDB.scope)) {
+                        HttpStatusCode.Forbidden to "You must be a member of the Scope of the Service Definition you are trying to obtain!"
+                    }
+                    val discoveryResponse = DiscoveryResponse(
+                        user,
+                        listOf(inDB.serviceDefinition),
+                    )
+                    call.respond(discoveryResponse)
                 }
-                val discoveryResponse = DiscoveryResponse(
-                    user,
-                    listOf(inDB.serviceDefinition),
-                )
-                call.respond(discoveryResponse)
             }
 
             get("/services/scope/{scope}") {
                 val scope = call.parameters["scope"]
                 val user: User? = call.authentication.principal()
-                verify(user != null) { HttpStatusCode.Unauthorized to "You need to be Authenticated for this request!" }
-                verify(scope != null) { HttpStatusCode.BadRequest to "You must enter a Scope!" }
-                verify(user.access.superAdmin || user.scopes.contains(scope)) { HttpStatusCode.Forbidden to "You must be a member of the Scope you are trying to obtain!" }
-                val inDB = scope.let { apiService.readForScope(it) }
-                val discoveryResponse = DiscoveryResponse(
-                    user,
-                    inDB.map { it.serviceDefinition }.toList(),
-                )
-                call.respond(discoveryResponse)
+                db {
+                    user?.attachScopes(scopeService)
+                    verify(user != null) { HttpStatusCode.Unauthorized to "You need to be Authenticated for this request!" }
+                    verify(scope != null) { HttpStatusCode.BadRequest to "You must enter a Scope!" }
+                    verify(user.access.superAdmin || user.scopes.contains(scope)) { HttpStatusCode.Forbidden to "You must be a member of the Scope you are trying to obtain!" }
+                    val inDB = scope.let { apiService.readForScope(it) }
+                    val discoveryResponse = DiscoveryResponse(
+                        user,
+                        inDB.map { it.serviceDefinition }.toList(),
+                    )
+                    call.respond(discoveryResponse)
+                }
             }
 
             post<DiscoveryRequest>("/services") { body: DiscoveryRequest ->
                 val user: User? = call.authentication.principal()
-                verify(user != null) { HttpStatusCode.Unauthorized to "You need to be Authenticated for this request!" }
-                val publicReq = body.forScope == null
-                if (publicReq) {
-                    verify(user.access.superAdmin) { HttpStatusCode.Forbidden to "You need to be a superadmin to publish public Service Definitions!" }
-                }
-                verify(publicReq || user.access.superAdmin || user.access.admin && user.scopes.contains(body.forScope) || user.userScope == body.forScope) {
-                    HttpStatusCode.Forbidden to "You must be a member of the Scope you are trying to publish the Service Definitions to!"
-                }
-                val inDB = apiService.read(body.id)
-                if (inDB != null) {
-                    verify(user.access.superAdmin || (user.access.admin && user.scopes.contains(inDB.scope)) || user.userScope == body.forScope) {
-                        HttpStatusCode.Forbidden to "The Service Definition with the id: ${body.id} is already in DB and you are not eligible to alter this resource!"
+                db {
+                    user?.attachScopes(scopeService)
+                    verify(user != null) { HttpStatusCode.Unauthorized to "You need to be Authenticated for this request!" }
+                    val publicReq = body.forScope == null
+                    if (publicReq) {
+                        verify(user.access.superAdmin) { HttpStatusCode.Forbidden to "You need to be a superadmin to publish public Service Definitions!" }
                     }
-                    apiService.update(body.toDTO())
-                } else {
-                    apiService.create(body.toDTO())
+                    verify(publicReq || user.access.superAdmin || user.access.admin && user.scopes.contains(body.forScope) || user.userScope == body.forScope) {
+                        HttpStatusCode.Forbidden to "You must be a member of the Scope you are trying to publish the Service Definitions to!"
+                    }
+                    val inDB = apiService.read(body.id)
+                    if (inDB != null) {
+                        verify(user.access.superAdmin || (user.access.admin && user.scopes.contains(inDB.scope)) || user.userScope == body.forScope) {
+                            HttpStatusCode.Forbidden to "The Service Definition with the id: ${body.id} is already in DB and you are not eligible to alter this resource!"
+                        }
+                        apiService.update(body.toDTO())
+                    } else {
+                        apiService.create(body.toDTO())
+                    }
+                    call.respond(body.id)
                 }
-                call.respond(body.id)
             }
 
             delete("/services/{id}") {
                 val id = call.parameters["id"]
                 verify(id != null) { HttpStatusCode.BadRequest to "You must enter an ID!" }
                 val user: User? = call.authentication.principal()
-                verify(user != null) { HttpStatusCode.Unauthorized to "You need to be Authenticated for this request!" }
-                val inDB = apiService.read(id)
-                verify(inDB != null) { HttpStatusCode.NotFound to "No Service Definition with this ID present!" }
-                if (inDB.scope == null) {
-                    verify(user.access.superAdmin) {
-                        HttpStatusCode.Forbidden to "You must be a Superadmin to delete a public Service Definition!"
+                db {
+                    user?.attachScopes(scopeService)
+                    verify(user != null) { HttpStatusCode.Unauthorized to "You need to be Authenticated for this request!" }
+                    val inDB = apiService.read(id)
+                    verify(inDB != null) { HttpStatusCode.NotFound to "No Service Definition with this ID present!" }
+                    if (inDB.scope == null) {
+                        verify(user.access.superAdmin) {
+                            HttpStatusCode.Forbidden to "You must be a Superadmin to delete a public Service Definition!"
+                        }
                     }
+                    verify(user.access.superAdmin || (user.access.admin && user.scopes.contains(inDB.scope)) || user.userScope == inDB.scope) {
+                        HttpStatusCode.Forbidden to "You are not able to delete a public Service Definition!"
+                    }
+                    apiService.delete(inDB.id)
+                    call.respond(inDB.id)
                 }
-                verify(user.access.superAdmin || (user.access.admin && user.scopes.contains(inDB.scope)) || user.userScope == inDB.scope) {
-                    HttpStatusCode.Forbidden to "You are not able to delete a public Service Definition!"
-                }
-                apiService.delete(inDB.id)
-                call.respond(inDB.id)
             }
         }
     }

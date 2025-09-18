@@ -25,6 +25,7 @@ dependencies {
     api(libs.exposed.rdbc)
     api(libs.exposed.json)
     api(libs.exposed.datetime)
+    api(libs.exposed.migrations.r2dbc)
     api(libs.postgres)
     api(libs.ktor.server.request.validation)
     api(libs.ktor.server.auto.head.response)
@@ -43,6 +44,8 @@ dependencies {
     api(libs.logback.classic)
     api(libs.kotlinx.datetime)
     api(libs.ktor.server.config.yaml)
+    api(libs.flyway)
+    runtimeOnly(libs.flyway.pg)
     runtimeOnly(libs.postgres.jdbc)
 
     //aviator

@@ -4,7 +4,9 @@ import cloud.mallne.dicentra.aviator.core.ServiceMethods
 import cloud.mallne.dicentra.aviator.model.ServiceLocator
 import cloud.mallne.dicentra.synapse.model.Configuration
 import cloud.mallne.dicentra.synapse.model.User
+import cloud.mallne.dicentra.synapse.service.DatabaseService
 import cloud.mallne.dicentra.synapse.service.DiscoveryGenerator
+import cloud.mallne.dicentra.synapse.service.ScopeService
 import cloud.mallne.dicentra.synapse.statics.verify
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -25,6 +27,8 @@ import org.koin.ktor.ext.inject
 fun Application.user() {
     val discoveryGenerator by inject<DiscoveryGenerator>()
     val config by inject<Configuration>()
+    val scopeService by inject<ScopeService>()
+    val db by inject<DatabaseService>()
 
     discoveryGenerator.memorize {
         path("/user") {
@@ -42,6 +46,9 @@ fun Application.user() {
         authenticate {
             get("/user") {
                 val user: User? = call.authentication.principal()
+                db {
+                    user?.attachScopes(scopeService)
+                }
                 verify(user != null) { HttpStatusCode.Unauthorized to "You need to be Authenticated for this request!" }
                 call.respond(user)
             }

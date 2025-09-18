@@ -9,8 +9,6 @@ import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.toList
 import org.koin.ktor.ext.inject
 import org.slf4j.LoggerFactory
 
@@ -45,11 +43,8 @@ fun Application.configureSecurity() {
                             header(HttpHeaders.Authorization, "Basic ${config.security.encodedCredentials()}")
                         }.body<IntrospectionResponse>()
                         log.info("User ${response.name} requested a Resource")
-                        val scopes = scopeService.readForAttachment(ScopeService.user(response.preferredUsername))
-                            .map { it.name }.toList()
                         response.toUser(
                             config = config.security,
-                            scopes = scopes
                         )
                     } catch (e: Exception) {
                         log.error(e.message, e)

@@ -1,14 +1,18 @@
 package cloud.mallne.dicentra.synapse.service
 
+import cloud.mallne.dicentra.synapse.model.RequiresTransactionContext
 import cloud.mallne.dicentra.synapse.model.dto.ScopeDTO
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.singleOrNull
-import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.eq
+import kotlinx.coroutines.flow.toList
 import org.jetbrains.exposed.v1.core.dao.id.IntIdTable
+import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.datetime.CurrentDateTime
 import org.jetbrains.exposed.v1.datetime.datetime
-import org.jetbrains.exposed.v1.r2dbc.*
+import org.jetbrains.exposed.v1.r2dbc.deleteWhere
+import org.jetbrains.exposed.v1.r2dbc.insert
+import org.jetbrains.exposed.v1.r2dbc.selectAll
+import org.jetbrains.exposed.v1.r2dbc.update
 import org.koin.core.annotation.Single
 
 /**
@@ -29,12 +33,6 @@ class ScopeService(private val databaseService: DatabaseService) {
         val created = datetime("created").defaultExpression(CurrentDateTime)
     }
 
-    init {
-        databaseService.transaction {
-            SchemaUtils.create(Scopes)
-        }
-    }
-
     /**
      * Creates a new scope record in the database and returns its generated ID.
      *
@@ -43,12 +41,11 @@ class ScopeService(private val databaseService: DatabaseService) {
      *                 and associated attachments.
      * @return the ID of the newly created scope record.
      */
-    suspend fun create(scopeDTO: ScopeDTO): Int = databaseService {
-        Scopes.insert {
-            it[name] = scopeDTO.name
-            it[attaches] = scopeDTO.attaches
-        }[Scopes.id].value
-    }
+    @RequiresTransactionContext
+    suspend fun create(scopeDTO: ScopeDTO): Int = Scopes.insert {
+        it[name] = scopeDTO.name
+        it[attaches] = scopeDTO.attaches
+    }[Scopes.id].value
 
     /**
      * Retrieves a `ScopeDTO` object corresponding to the specified ID from the database.
@@ -56,13 +53,12 @@ class ScopeService(private val databaseService: DatabaseService) {
      * @param id the unique identifier of the scope to be retrieved.
      * @return the `ScopeDTO` object if found, or `null` if no scope exists with the given ID.
      */
+    @RequiresTransactionContext
     suspend fun read(id: Int): ScopeDTO? {
-        return databaseService {
-            Scopes.selectAll()
-                .where { Scopes.id eq id }
-                .map { ScopeDTO(it[Scopes.id].value, it[Scopes.name], it[Scopes.attaches]) }
-                .singleOrNull()
-        }
+        return Scopes.selectAll()
+            .where { Scopes.id eq id }
+            .map { ScopeDTO(it[Scopes.id].value, it[Scopes.name], it[Scopes.attaches]) }
+            .singleOrNull()
     }
 
     /**
@@ -72,12 +68,12 @@ class ScopeService(private val databaseService: DatabaseService) {
      * @param attachment the attachment identifier used to filter the scopes in the database.
      * @return a list of `ScopeDTO` objects with the specified attachment.
      */
-    suspend fun readForAttachment(attachment: String): Flow<ScopeDTO> {
-        return databaseService {
-            Scopes.selectAll()
-                .where { Scopes.attaches eq attachment }
-                .map { ScopeDTO(it[Scopes.id].value, it[Scopes.name], it[Scopes.attaches]) }
-        }
+    @RequiresTransactionContext
+    suspend fun readForAttachment(attachment: String): List<ScopeDTO> {
+        return Scopes.selectAll()
+            .where { Scopes.attaches eq attachment }
+            .map { ScopeDTO(it[Scopes.id].value, it[Scopes.name], it[Scopes.attaches]) }
+            .toList()
     }
 
     /**
@@ -86,12 +82,12 @@ class ScopeService(private val databaseService: DatabaseService) {
      * @param name the name of the scope to filter for in the database.
      * @return a list of `ScopeDTO` objects that have the specified name.
      */
-    suspend fun readForName(name: String): Flow<ScopeDTO> {
-        return databaseService {
-            Scopes.selectAll()
-                .where { Scopes.name eq name }
-                .map { ScopeDTO(it[Scopes.id].value, it[Scopes.name], it[Scopes.attaches]) }
-        }
+    @RequiresTransactionContext
+    suspend fun readForName(name: String): List<ScopeDTO> {
+        return Scopes.selectAll()
+            .where { Scopes.name eq name }
+            .map { ScopeDTO(it[Scopes.id].value, it[Scopes.name], it[Scopes.attaches]) }
+            .toList()
     }
 
     /**
@@ -100,12 +96,11 @@ class ScopeService(private val databaseService: DatabaseService) {
      * @param scopeDTO the data transfer object containing the updated scope information.
      *                 This includes the scope's unique identifier, name, and associated attachments.
      */
+    @RequiresTransactionContext
     suspend fun update(scopeDTO: ScopeDTO) {
-        databaseService {
-            Scopes.update({ Scopes.id eq scopeDTO.id }) {
-                it[name] = scopeDTO.name
-                it[attaches] = scopeDTO.attaches
-            }
+        Scopes.update({ Scopes.id eq scopeDTO.id }) {
+            it[name] = scopeDTO.name
+            it[attaches] = scopeDTO.attaches
         }
     }
 
@@ -114,10 +109,9 @@ class ScopeService(private val databaseService: DatabaseService) {
      *
      * @param id the unique identifier of the scope to be deleted.
      */
+    @RequiresTransactionContext
     suspend fun delete(id: Int) {
-        databaseService {
-            Scopes.deleteWhere { Scopes.id.eq(id) }
-        }
+        Scopes.deleteWhere { Scopes.id.eq(id) }
     }
 
     /**
@@ -125,10 +119,9 @@ class ScopeService(private val databaseService: DatabaseService) {
      *
      * @param name the name of the scope to be deleted.
      */
+    @RequiresTransactionContext
     suspend fun deleteByName(name: String) {
-        databaseService {
-            Scopes.deleteWhere { Scopes.name.eq(name) }
-        }
+        Scopes.deleteWhere { Scopes.name.eq(name) }
     }
 
     companion object Attachment {

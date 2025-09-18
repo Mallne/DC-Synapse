@@ -2,10 +2,9 @@ package cloud.mallne.dicentra.synapse.model
 
 import cloud.mallne.dicentra.synapse.helper.toBooleanish
 import cloud.mallne.dicentra.synapse.statics.Client
-import cloud.mallne.dicentra.synapse.statics.Client.invoke
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionTransformationType
-import io.ktor.client.call.body
-import io.ktor.client.request.get
+import io.ktor.client.call.*
+import io.ktor.client.request.*
 import io.ktor.server.application.*
 import io.ktor.server.config.*
 import kotlinx.coroutines.runBlocking
@@ -36,9 +35,12 @@ class Configuration(
             val hostname = application.environment.config.tryGetString("server.hostname") ?: "0.0.0.0"
             val tlsEnabled = application.environment.config.tryGetString("server.tls_enabled")?.toBooleanish() ?: true
             val info = application.environment.config.tryGetString("server.info") ?: "DiCentra Synapse"
-            val description = application.environment.config.tryGetString("server.description") ?: "A discovery endpoint for Aviator services."
+            val description = application.environment.config.tryGetString("server.description")
+                ?: "A discovery endpoint for Aviator services."
             val baseLocator = application.environment.config.tryGetString("server.base_locator") ?: "synapse"
-            val discoveryExclusions = application.environment.config.tryGetString("server.discovery_exclusions")?.split(",")?.filter { it.isNotBlank() } ?: listOf()
+            val discoveryExclusions =
+                application.environment.config.tryGetString("server.discovery_exclusions")?.split(",")
+                    ?.filter { it.isNotBlank() } ?: listOf()
 
             companion object Nested {
                 class ServerCorsConfiguration(val application: Application) {
@@ -107,6 +109,10 @@ class Configuration(
             val user = application.environment.config.tryGetString("data.user") ?: ""
             val password = application.environment.config.tryGetString("data.password") ?: ""
             val schema = application.environment.config.tryGetString("data.schema") ?: "synapse"
+            val migrationDirectory = application.environment.config.tryGetStringList("data.migrations") ?: listOf()
+            val autoCreateDelta =
+                application.environment.config.tryGetString("data.auto_create_delta")?.toBooleanish() ?: false
+            val migrationName = application.environment.config.tryGetString("data.migration_name") ?: "V0__create"
         }
     }
 }
