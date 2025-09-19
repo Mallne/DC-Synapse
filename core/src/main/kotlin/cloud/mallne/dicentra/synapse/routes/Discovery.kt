@@ -166,8 +166,7 @@ fun Application.discovery() {
                 val user: User? = call.authentication.principal()
                 db {
                     user?.attachScopes(scopeService)
-                    val services = apiService.readPublic()
-                        .toMutableList()
+                    val services = apiService.readPublic().toMutableList()
                     if (user != null) {
                         services.addAll(apiService.readForScopes(user.scopes))
                     }

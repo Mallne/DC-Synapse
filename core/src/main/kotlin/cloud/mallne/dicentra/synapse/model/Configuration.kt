@@ -112,7 +112,8 @@ class Configuration(
             val migrationDirectory = application.environment.config.tryGetStringList("data.migrations") ?: listOf()
             val autoCreateDelta =
                 application.environment.config.tryGetString("data.auto_create_delta")?.toBooleanish() ?: false
-            val migrationName = application.environment.config.tryGetString("data.migration_name") ?: "V0__create"
+            val migrationName =
+                application.environment.config.tryGetString("data.migration_name") ?: "V0__create.generated"
         }
     }
 }

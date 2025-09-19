@@ -22,11 +22,9 @@ import org.koin.core.annotation.Single
  * and performs operations within transactional contexts provided by `DatabaseService`.
  *
  * @constructor Initializes the `ScopeService` and creates the `Scopes` table if it does not already exist.
- *
- * @property databaseService The `DatabaseService` instance used to execute database transactions.
  */
 @Single
-class ScopeService(private val databaseService: DatabaseService) {
+class ScopeService() {
     object Scopes : IntIdTable() {
         val name = varchar("name", 255)
         val attaches = varchar("attaches", 255)
