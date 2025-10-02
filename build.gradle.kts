@@ -1,4 +1,5 @@
 import nl.littlerobots.vcu.plugin.resolver.VersionSelectors
+import nl.littlerobots.vcu.plugin.versionCatalogUpdate
 import nl.littlerobots.vcu.plugin.versionSelector
 import java.util.*
 
@@ -19,13 +20,14 @@ allprojects {
     }
 }
 
-val allowAlpha = listOf<List<Provider<MinimalExternalModuleDependency>>>(
+val allowAlpha: List<Provider<MinimalExternalModuleDependency>> = listOf(
 
 )
-val allowBeta = listOf(
+val allowBeta: List<Provider<MinimalExternalModuleDependency>> = listOf(
     libs.exposed.core,
     libs.exposed.datetime,
     libs.exposed.json,
+    libs.exposed.migrations.r2dbc,
     libs.exposed.rdbc,
 )
 
