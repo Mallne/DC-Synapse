@@ -18,6 +18,6 @@ suspend inline fun RoutingContext.verify(
     if (!value) {
         val message = lazyMessage()
         call.respond(message.first, message.second)
-        throw DiCentraException("A predicate is not matched tor this request!")
+        throw DiCentraException("A predicate is not matched tor this request!: ${message.second}")
     }
 }
