@@ -1,6 +1,6 @@
 [versions]
 # @pin
-agp = "8.12.3"
+agp = "8.13.0"
 # @keep
 android-compileSdk = "36"
 # @keep
@@ -15,7 +15,7 @@ flyway-ver = "11.13.2"
 koin = "4.1.1"
 koin-annotations = "2.1.0"
 kotlin = "2.2.20"
-kotlinx-datetime = "0.7.1"
+kotlinx-datetime = "0.7.1-0.6.x-compat"
 ksp = "2.2.20-2.0.3"
 ktor = "3.3.0"
 logback-version = "1.5.19"
