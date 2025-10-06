@@ -15,6 +15,16 @@ class DatabaseService(config: Configuration) {
     val scm = Schema(config.data.schema)
     val dataConfig = config.data
 
+    init {
+        R2dbcDatabase.connect {
+            setUrl("r2dbc:${dataConfig.url}?schema=${dataConfig.schema}")
+            connectionFactoryOptions {
+                option(ConnectionFactoryOptions.USER, dataConfig.user)
+                option(ConnectionFactoryOptions.PASSWORD, dataConfig.password)
+            }
+        }
+    }
+
     /**
      * Executes a suspended transaction within the database context, providing a DSL
      * for database operations. This function is a shorthand operator for invoking
@@ -37,15 +47,7 @@ class DatabaseService(config: Configuration) {
      * @return the result of the suspended transaction block.
      */
     suspend fun <T> dbQuery(block: suspend R2dbcTransaction.() -> T): T {
-        return suspendTransaction(
-            db = R2dbcDatabase.connect {
-                setUrl("r2dbc:${dataConfig.url}?schema=${dataConfig.schema}")
-                connectionFactoryOptions {
-                    option(ConnectionFactoryOptions.USER, dataConfig.user)
-                    option(ConnectionFactoryOptions.PASSWORD, dataConfig.password)
-                }
-            }
-        ) {
+        return suspendTransaction {
             addLogger(StdOutSqlLogger)
             SchemaUtils.setSchema(scm)
             block()
