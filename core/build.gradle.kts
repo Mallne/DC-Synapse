@@ -50,7 +50,8 @@ dependencies {
 
     //aviator
     api(libs.dc.aviator.client.ktor)
-    api(libs.dc.aviator.plugin.translationkeys)
+    implementation(libs.dc.aviator.adapter.xml)
+    implementation(libs.dc.aviator.adapter.json)
     api(libs.dc.aviator.plugin.interception)
     api(libs.dc.aviator.plugin.weaver)
     api(libs.dc.aviator.plugin.synapse)
