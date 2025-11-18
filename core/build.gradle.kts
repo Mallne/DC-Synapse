@@ -50,6 +50,7 @@ dependencies {
 
     //aviator
     api(libs.dc.aviator.client.ktor)
+    api(libs.dc.aviator.client.mock)
     api(libs.dc.aviator.adapter.xml)
     api(libs.dc.aviator.adapter.json)
     api(libs.dc.aviator.plugin.interception)

@@ -1,11 +1,11 @@
 package cloud.mallne.dicentra.synapse.model
 
+import cloud.mallne.dicentra.aviator.client.mock.MockConverter
+import cloud.mallne.dicentra.aviator.koas.OpenAPI
 import cloud.mallne.dicentra.synapse.model.dto.APIServiceDTO
 import cloud.mallne.dicentra.synapse.statics.ResponseObject
 import cloud.mallne.dicentra.synapse.statics.Serialization
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionTransformationType
-import cloud.mallne.dicentra.aviator.core.mock.MockConverter
-import cloud.mallne.dicentra.aviator.koas.OpenAPI
 import kotlinx.serialization.Serializable
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
@@ -23,7 +23,7 @@ data class DiscoveryRequest @OptIn(ExperimentalUuidApi::class) constructor(
     val preferredTransform: ServiceDefinitionTransformationType = ServiceDefinitionTransformationType.Auto,
 ) {
     init {
-        val o = MockConverter(Serialization()).build(service)
+        val o = MockConverter(listOf(Serialization())).build(service)
         require(o.isNotEmpty()) { "Service should not be empty" }
     }
 
