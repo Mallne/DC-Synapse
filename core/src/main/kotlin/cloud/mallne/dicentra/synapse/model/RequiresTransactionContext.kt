@@ -1,3 +1,3 @@
 package cloud.mallne.dicentra.synapse.model
 
-annotation class RequiresTransactionContext()
+annotation class RequiresTransactionContext

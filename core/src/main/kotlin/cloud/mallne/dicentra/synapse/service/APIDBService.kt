@@ -31,7 +31,7 @@ import org.koin.core.annotation.Single
  *              the underlying database table schema is created during initialization.
  */
 @Single
-class APIDBService() {
+class APIDBService {
     object APIServiceData : IdTable<String>() {
         val service = jsonb<OpenAPI>("service", Serialization())
         val scope = varchar("scope", 255).nullable()

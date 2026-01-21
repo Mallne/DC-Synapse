@@ -24,7 +24,7 @@ import org.koin.core.annotation.Single
  * @constructor Initializes the `ScopeService` and creates the `Scopes` table if it does not already exist.
  */
 @Single
-class ScopeService() {
+class ScopeService {
     object Scopes : IntIdTable() {
         val name = varchar("name", 255)
         val attaches = varchar("attaches", 255)
