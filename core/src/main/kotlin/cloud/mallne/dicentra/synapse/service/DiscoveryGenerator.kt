@@ -17,6 +17,7 @@ import cloud.mallne.dicentra.aviator.model.ServiceLocator
 import cloud.mallne.dicentra.synapse.model.Configuration
 import cloud.mallne.dicentra.synapse.statics.Serialization
 import io.ktor.http.*
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.koin.core.annotation.Single
 
@@ -150,6 +151,7 @@ class DiscoveryGenerator(
     }
 
     companion object {
+        @Serializable
         enum class AuthenticationStrategy {
             MANDATORY, OPTIONAL, NONE
         }

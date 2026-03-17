@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.ktor)
     alias(libs.plugins.ksp)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.koin.compiler)
 }
 
 group = "cloud.mallne.dicentra.synapse"
@@ -14,19 +15,14 @@ application {
 }
 
 dependencies {
+    //Koin
     api(libs.koin.ktor)
     api(libs.koin.logger.slf4j)
     api(libs.koin.annotations)
-    ksp(libs.koin.ksp)
+    //Ktor
     api(libs.ktor.server.core)
     api(libs.ktor.serialization.kotlinx.json)
     api(libs.ktor.server.content.negotiation)
-    api(libs.exposed.core)
-    api(libs.exposed.rdbc)
-    api(libs.exposed.json)
-    api(libs.exposed.datetime)
-    api(libs.exposed.migrations.r2dbc)
-    api(libs.postgres)
     api(libs.ktor.server.request.validation)
     api(libs.ktor.server.auto.head.response)
     api(libs.ktor.server.auth)
@@ -40,14 +36,22 @@ dependencies {
     api(libs.ktor.server.caching.headers)
     api(libs.ktor.server.compression)
     api(libs.ktor.server.netty)
-    api(libs.mcp)
-    api(libs.logback.classic)
-    api(libs.kotlinx.datetime)
     api(libs.ktor.server.config.yaml)
+    // Exposed
+    api(libs.exposed.core)
+    api(libs.exposed.rdbc)
+    api(libs.exposed.json)
+    api(libs.exposed.datetime)
+    api(libs.exposed.migrations.r2dbc)
+    // Database
+    api(libs.postgres)
     api(libs.flyway)
     runtimeOnly(libs.flyway.pg)
     runtimeOnly(libs.postgres.jdbc)
-
+    // Other
+    api(libs.mcp)
+    api(libs.logback.classic)
+    api(libs.kotlinx.datetime)
     //aviator
     api(libs.dc.aviator.client.ktor)
     api(libs.dc.aviator.client.mock)

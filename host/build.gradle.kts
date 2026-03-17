@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.android.library) apply false
     alias(libs.plugins.ktor)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.koin.compiler)
     alias(libs.plugins.kotlin.serialization)
 }
 
@@ -14,6 +15,5 @@ application {
 }
 
 dependencies {
-    ksp(libs.koin.ksp)
     implementation(project(":core"))
 }
