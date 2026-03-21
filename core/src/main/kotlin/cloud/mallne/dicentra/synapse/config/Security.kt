@@ -2,7 +2,6 @@ package cloud.mallne.dicentra.synapse.config
 
 import cloud.mallne.dicentra.synapse.model.Configuration
 import cloud.mallne.dicentra.synapse.model.IntrospectionResponse
-import cloud.mallne.dicentra.synapse.service.ScopeService
 import cloud.mallne.dicentra.synapse.statics.Client
 import io.ktor.client.call.*
 import io.ktor.client.request.*
@@ -17,7 +16,6 @@ fun Application.configureSecurity() {
     // Get security settings and default to enabled if missing
     // See https://ktor.io/docs/server-jwt.html#configure-verifier
     val config by inject<Configuration>()
-    val scopeService by inject<ScopeService>()
 
 
     authentication {

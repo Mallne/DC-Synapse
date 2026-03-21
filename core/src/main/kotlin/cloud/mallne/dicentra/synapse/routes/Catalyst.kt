@@ -1,6 +1,5 @@
 package cloud.mallne.dicentra.synapse.routes
 
-import cloud.mallne.dicentra.synapse.model.Configuration
 import cloud.mallne.dicentra.synapse.model.DiscoveryResponse
 import cloud.mallne.dicentra.synapse.model.User
 import cloud.mallne.dicentra.synapse.model.dto.APIServiceDTO.Companion.transform
@@ -17,7 +16,6 @@ import io.ktor.server.routing.*
 import org.koin.ktor.ext.inject
 
 fun Application.catalyst() {
-    val config by inject<Configuration>()
     val catalystGenerator by inject<CatalystGenerator>()
     val apiService by inject<APIDBService>()
     val scopeService by inject<ScopeService>()
