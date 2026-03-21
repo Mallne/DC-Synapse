@@ -34,11 +34,9 @@ data class IntrospectionResponse(
     val clientId: String,
 ) {
     fun toUser(config: Configuration.Nested.SecurityConfiguration): User {
-        val acl = User.AccessLevels(
-            config.groups.user in groups,
-            config.groups.admin in groups,
-            config.groups.superAdmin in groups
-        )
+        // Access levels are derived from scopes after attachScopes() is called
+        // Initially, user = true for any authenticated user
+        val acl = User.AccessLevels(user = true)
         val locked = config.enabled && !active && !emailVerified
         return User(name, email, preferredUsername, locked, acl)
     }

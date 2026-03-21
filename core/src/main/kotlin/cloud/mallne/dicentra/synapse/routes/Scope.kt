@@ -100,10 +100,15 @@ fun Application.scope() {
                 verify(scope != null) { HttpStatusCode.BadRequest to "You must provide a scope for this request!" }
                 val user: User? = call.authentication.principal()
                 verify(user != null) { HttpStatusCode.Unauthorized to "You need to be Authenticated for this request!" }
-                verify(user.access.admin || user.access.superAdmin) { HttpStatusCode.Forbidden to "You must be at least admin for this request!" }
-                verify(user.access.superAdmin || user.scopes.contains(scope)) { HttpStatusCode.Forbidden to "You must be a member of the Scope you are trying to obtain!" }
                 db {
                     user.attachScopes(scopeService)
+                    // Must be admin (from scopes) or superadmin (OAuth)
+                    verify(user.access.superAdmin || user.isAdmin) { HttpStatusCode.Forbidden to "You must be at least admin for this request!" }
+                    // Check if user is member of the scope or admin of the scope
+                    val fullScope = ScopeService.scope(scope)
+                    val isMember = user.scopes.contains(fullScope)
+                    val isAdmin = user.isAdminOf(scope)
+                    verify(user.access.superAdmin || isMember || isAdmin) { HttpStatusCode.Forbidden to "You must be a member or admin of the Scope you are trying to obtain!" }
                     val scopes = scopeService.readForName(scope)
                     val response = ScopeRequest(
                         name = scope,
@@ -117,10 +122,13 @@ fun Application.scope() {
                 verify(scope != null) { HttpStatusCode.BadRequest to "You must provide a scope for this request!" }
                 val user: User? = call.authentication.principal()
                 verify(user != null) { HttpStatusCode.Unauthorized to "You need to be Authenticated for this request!" }
-                verify(user.access.admin || user.access.superAdmin) { HttpStatusCode.Forbidden to "You must be at least admin for this request!" }
-                verify(user.access.superAdmin || user.scopes.contains(scope)) { HttpStatusCode.Forbidden to "You must be a member of the Scope you are trying to obtain!" }
                 db {
                     user.attachScopes(scopeService)
+                    // Must be admin (from scopes) or superadmin (OAuth)
+                    verify(user.access.superAdmin || user.isAdmin) { HttpStatusCode.Forbidden to "You must be at least admin for this request!" }
+                    // Check if user is admin of the scope or superadmin
+                    val isAdmin = user.isAdminOf(scope)
+                    verify(user.access.superAdmin || isAdmin) { HttpStatusCode.Forbidden to "You must be an admin of the Scope you are trying to delete!" }
                     scopeService.deleteByName(scope)
                 }
                 call.respond(scope)
@@ -128,10 +136,15 @@ fun Application.scope() {
             post<ScopeRequest>("/scope") { body ->
                 val user: User? = call.authentication.principal()
                 verify(user != null) { HttpStatusCode.Unauthorized to "You need to be Authenticated for this request!" }
-                verify(user.access.admin || user.access.superAdmin) { HttpStatusCode.Forbidden to "You must be at least admin for this request!" }
-                verify(user.access.superAdmin || user.scopes.contains(body.name) || body.attachments.contains(user.userScope)) { HttpStatusCode.Forbidden to "You must be a member of the Scope you are trying to create!" }
                 db {
                     user.attachScopes(scopeService)
+                    // Must be admin (from scopes) or superadmin (OAuth)
+                    verify(user.access.superAdmin || user.isAdmin) { HttpStatusCode.Forbidden to "You must be at least admin for this request!" }
+                    // Check if user is member of the scope they want to create or superadmin
+                    val fullScope = ScopeService.scope(body.name)
+                    val isMember = user.scopes.contains(fullScope)
+                    val isAdmin = user.isAdminOf(body.name)
+                    verify(user.access.superAdmin || isMember || isAdmin) { HttpStatusCode.Forbidden to "You must be a member or admin of the Scope you are trying to create!" }
                     val already = scopeService.readForName(body.name).toList()
                     verify(already.isNotEmpty()) { HttpStatusCode.Conflict to "The Scope '${body.name}' already exists!" }
                     val scopes = body.toDTO()
