@@ -8,21 +8,24 @@ import io.ktor.client.request.*
 import io.ktor.server.application.*
 import io.ktor.server.config.*
 import kotlinx.coroutines.runBlocking
+import org.koin.core.annotation.Provided
 import org.slf4j.LoggerFactory
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
 data class Configuration(
+    @Provided
     val application: Application
 ) {
     val security = SecurityConfiguration(application)
     val data = DatabaseConfiguration(application)
     val server = ServerConfiguration(application)
     val catalyst = CatalystConfiguration(application)
-    val preferredTransform: ServiceDefinitionTransformationType = ServiceDefinitionTransformationType.fromString(
-        application.environment.config.tryGetString("preferred_transform")
-            ?: ServiceDefinitionTransformationType.Native.name
-    )
+    val preferredTransform: ServiceDefinitionTransformationType =
+        ServiceDefinitionTransformationType.fromString(
+            application.environment.config.tryGetString("preferred_transform")
+                ?: ServiceDefinitionTransformationType.Native.name
+        )
 
     init {
         require(preferredTransform != ServiceDefinitionTransformationType.Auto) { "Auto is not an allowed preferred transform" }

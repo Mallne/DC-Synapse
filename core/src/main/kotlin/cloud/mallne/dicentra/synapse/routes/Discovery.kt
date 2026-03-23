@@ -10,7 +10,11 @@ import cloud.mallne.dicentra.synapse.model.DiscoveryRequest
 import cloud.mallne.dicentra.synapse.model.DiscoveryResponse
 import cloud.mallne.dicentra.synapse.model.User
 import cloud.mallne.dicentra.synapse.model.dto.APIServiceDTO.Companion.transform
-import cloud.mallne.dicentra.synapse.service.*
+import cloud.mallne.dicentra.synapse.service.APIDBService
+import cloud.mallne.dicentra.synapse.service.CatalystGenerator
+import cloud.mallne.dicentra.synapse.service.DatabaseService
+import cloud.mallne.dicentra.synapse.service.DiscoveryGenerator
+import cloud.mallne.dicentra.synapse.service.ScopeService
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionGroupRule
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionTransformationType
 import cloud.mallne.dicentra.synapse.statics.verify
@@ -241,12 +245,13 @@ fun Application.discovery() {
                     if (publicReq) {
                         verify(user.access.superAdmin) { HttpStatusCode.Forbidden to "You need to be a superadmin to publish public Service Definitions!" }
                     }
-                    verify(publicReq || user.access.superAdmin || user.isAdmin && user.scopes.contains(body.forScope) || user.userScope == body.forScope) {
+                    verify(publicReq || user.access.superAdmin || user.isAdminOf(body.forScope)) {
                         HttpStatusCode.Forbidden to "You must be a member of the Scope you are trying to publish the Service Definitions to!"
                     }
                     val inDB = apiService.read(body.id)
                     if (inDB != null) {
-                        verify(user.access.superAdmin || (user.isAdmin && user.scopes.contains(inDB.scope)) || user.userScope == body.forScope) {
+                        val inDBScope = inDB.scope
+                        verify(user.access.superAdmin || inDBScope == null || user.isAdminOf(inDBScope)) {
                             HttpStatusCode.Forbidden to "The Service Definition with the id: ${body.id} is already in DB and you are not eligible to alter this resource!"
                         }
                         apiService.update(body.toDTO())
@@ -271,7 +276,7 @@ fun Application.discovery() {
                             HttpStatusCode.Forbidden to "You must be a Superadmin to delete a public Service Definition!"
                         }
                     }
-                    verify(user.access.superAdmin || (user.isAdmin && user.scopes.contains(inDB.scope)) || user.userScope == inDB.scope) {
+                    verify(user.access.superAdmin || user.isAdminOf(inDB.scope!!)) {
                         HttpStatusCode.Forbidden to "You are not able to delete a public Service Definition!"
                     }
                     apiService.delete(inDB.id)

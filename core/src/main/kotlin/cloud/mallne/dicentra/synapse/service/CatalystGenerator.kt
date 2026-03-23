@@ -1,7 +1,5 @@
 package cloud.mallne.dicentra.synapse.service
 
-import cloud.mallne.dicentra.synapse.model.Configuration
-import cloud.mallne.dicentra.synapse.statics.Serialization
 import cloud.mallne.dicentra.aviator.core.AviatorExtensionSpec
 import cloud.mallne.dicentra.aviator.core.AviatorExtensionSpec.`x-dicentra-aviator-pluginMaterialization`
 import cloud.mallne.dicentra.aviator.core.AviatorExtensionSpec.`x-dicentra-aviator-serviceDelegateCall`
@@ -19,15 +17,18 @@ import cloud.mallne.dicentra.aviator.model.ServiceLocator
 import cloud.mallne.dicentra.aviator.plugin.synapse.SynapsePlugin
 import cloud.mallne.dicentra.aviator.plugin.synapse.SynapsePluginConfig
 import cloud.mallne.dicentra.aviator.plugin.weaver.WeaverServiceObject
+import cloud.mallne.dicentra.synapse.model.Configuration
+import cloud.mallne.dicentra.synapse.statics.Serialization
 import io.ktor.http.*
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
+import org.koin.core.annotation.Provided
 import org.koin.core.annotation.Single
 
 @Single
 class CatalystGenerator(
-    val configuration: Configuration,
+    @Provided val configuration: Configuration,
     val json: Json = Serialization(),
 ) {
     fun generateFor(

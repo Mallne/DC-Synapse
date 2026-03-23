@@ -19,11 +19,12 @@ import cloud.mallne.dicentra.synapse.statics.Serialization
 import io.ktor.http.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import org.koin.core.annotation.Provided
 import org.koin.core.annotation.Single
 
 @Single
 class DiscoveryGenerator(
-    val configuration: Configuration,
+    @Provided val configuration: Configuration,
     val json: Json = Serialization(),
 ) {
     val memory = DiscoveryDSLBuilder(this)

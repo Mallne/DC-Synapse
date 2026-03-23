@@ -7,13 +7,6 @@ import kotlinx.serialization.Serializable
 data class IntrospectionResponse(
     val exp: Long,
     val iat: Long,
-    @SerialName("auth_time")
-    val authTime: Long,
-    val iss: String,
-    val aud: String,
-    val typ: String,
-    val sub: String,
-    val sid: String,
     val scope: String,
     val acr: String,
     @SerialName("email_verified")

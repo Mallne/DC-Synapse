@@ -6,7 +6,8 @@ import cloud.mallne.dicentra.aviator.koas.io.Schema
 import cloud.mallne.dicentra.aviator.koas.parameters.Parameter
 import cloud.mallne.dicentra.aviator.model.ServiceLocator
 import cloud.mallne.dicentra.synapse.model.Configuration
-import cloud.mallne.dicentra.synapse.model.ScopeRequest
+import cloud.mallne.dicentra.synapse.model.ScopeCreateRequest
+import cloud.mallne.dicentra.synapse.model.ScopeUpdateAttachesRequest
 import cloud.mallne.dicentra.synapse.model.User
 import cloud.mallne.dicentra.synapse.service.DatabaseService
 import cloud.mallne.dicentra.synapse.service.DiscoveryGenerator
@@ -19,26 +20,7 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import org.koin.ktor.ext.inject
 
-/**
- * Configures routing for scope-related operations and handles requests for creating, reading, and deleting scopes.
- *
- * This method provides routes for managing scopes with the following endpoints:
- *
- * - **GET /scope/{scope}**: Reads a list of attachments for the specified scope name,
- *   ensuring the authenticated user has sufficient permissions.
- * - **DELETE /scope/{scope}**: Deletes the specified scope name if the authenticated user has admin privileges.
- * - **POST /scope**: Creates a new scope based on the payload, provided it does not already exist
- *   and the authenticated user meets the required permissions.
- *
- * Authorization is enforced for all operations, and users must authenticate before using the endpoints.
- *
- * Request validations are performed to ensure:
- * - Required parameters are present.
- * - The authenticated user has adequate privileges based on the operation and scope.
- *
- * Any validation failures will result in appropriate HTTP error responses.
- */
-fun Application.scope() {
+fun Application.scopeRoutes() {
     val scopeService by inject<ScopeService>()
     val discoveryGenerator by inject<DiscoveryGenerator>()
     val config by inject<Configuration>()
@@ -47,20 +29,30 @@ fun Application.scope() {
     discoveryGenerator.memorize {
         path("/scope/{scope}") {
             operation(
-                id = "SpecificScope",
+                id = "GetScope",
                 method = HttpMethod.Get,
                 locator = ServiceLocator("${config.server.baseLocator}Scope", ServiceMethods.GATHER),
                 authenticationStrategy = DiscoveryGenerator.Companion.AuthenticationStrategy.MANDATORY,
-                summary = "Get a specific scope",
+                summary = "Get a scope with its members and admins",
                 parameter = listOf(
                     Parameter(
                         name = "scope",
                         input = Parameter.Input.Path,
-                        schema = ReferenceOr.value(
-                            Schema(
-                                type = Schema.Type.Basic.String
-                            )
-                        )
+                        schema = ReferenceOr.value(Schema(type = Schema.Type.Basic.String))
+                    )
+                )
+            )
+            operation(
+                id = "UpdateScopeAttaches",
+                method = HttpMethod.Patch,
+                locator = ServiceLocator("${config.server.baseLocator}Scope", ServiceMethods.UPSERT),
+                authenticationStrategy = DiscoveryGenerator.Companion.AuthenticationStrategy.MANDATORY,
+                summary = "Update the attaches (members) of a scope - requires scope admin",
+                parameter = listOf(
+                    Parameter(
+                        name = "scope",
+                        input = Parameter.Input.Path,
+                        schema = ReferenceOr.value(Schema(type = Schema.Type.Basic.String))
                     )
                 )
             )
@@ -69,16 +61,12 @@ fun Application.scope() {
                 method = HttpMethod.Delete,
                 locator = ServiceLocator("${config.server.baseLocator}Scope", ServiceMethods.DELETE),
                 authenticationStrategy = DiscoveryGenerator.Companion.AuthenticationStrategy.MANDATORY,
-                summary = "Deletes a specific scope",
+                summary = "Delete a scope - requires superadmin",
                 parameter = listOf(
                     Parameter(
                         name = "scope",
                         input = Parameter.Input.Path,
-                        schema = ReferenceOr.value(
-                            Schema(
-                                type = Schema.Type.Basic.String
-                            )
-                        )
+                        schema = ReferenceOr.value(Schema(type = Schema.Type.Basic.String))
                     )
                 )
             )
@@ -89,69 +77,78 @@ fun Application.scope() {
                 method = HttpMethod.Post,
                 locator = ServiceLocator("${config.server.baseLocator}Scope", ServiceMethods.CREATE),
                 authenticationStrategy = DiscoveryGenerator.Companion.AuthenticationStrategy.MANDATORY,
-                summary = "Creates a new scope",
+                summary = "Create a new scope - requires superadmin",
             )
         }
     }
+
     routing {
         authenticate {
             get("/scope/{scope}") {
-                val scope = call.parameters["scope"]
-                verify(scope != null) { HttpStatusCode.BadRequest to "You must provide a scope for this request!" }
+                val scopeName = call.parameters["scope"]
+                verify(scopeName != null) { HttpStatusCode.BadRequest to "You must provide a scope!" }
                 val user: User? = call.authentication.principal()
-                verify(user != null) { HttpStatusCode.Unauthorized to "You need to be Authenticated for this request!" }
+                verify(user != null) { HttpStatusCode.Unauthorized to "You must be authenticated!" }
+
                 db {
                     user.attachScopes(scopeService)
-                    // Must be admin (from scopes) or superadmin (OAuth)
-                    verify(user.access.superAdmin || user.isAdmin) { HttpStatusCode.Forbidden to "You must be at least admin for this request!" }
-                    // Check if user is member of the scope or admin of the scope
-                    val fullScope = ScopeService.scope(scope)
-                    val isMember = user.scopes.contains(fullScope)
-                    val isAdmin = user.isAdminOf(scope)
-                    verify(user.access.superAdmin || isMember || isAdmin) { HttpStatusCode.Forbidden to "You must be a member or admin of the Scope you are trying to obtain!" }
-                    val scopes = scopeService.readForName(scope)
-                    val response = ScopeRequest(
-                        name = scope,
-                        attachments = scopes.map { it.attaches }.toList()
-                    )
-                    call.respond(response)
-                }
-            }
-            delete("/scope/{scope}") {
-                val scope = call.parameters["scope"]
-                verify(scope != null) { HttpStatusCode.BadRequest to "You must provide a scope for this request!" }
-                val user: User? = call.authentication.principal()
-                verify(user != null) { HttpStatusCode.Unauthorized to "You need to be Authenticated for this request!" }
-                db {
-                    user.attachScopes(scopeService)
-                    // Must be admin (from scopes) or superadmin (OAuth)
-                    verify(user.access.superAdmin || user.isAdmin) { HttpStatusCode.Forbidden to "You must be at least admin for this request!" }
-                    // Check if user is admin of the scope or superadmin
-                    val isAdmin = user.isAdminOf(scope)
-                    verify(user.access.superAdmin || isAdmin) { HttpStatusCode.Forbidden to "You must be an admin of the Scope you are trying to delete!" }
-                    scopeService.deleteByName(scope)
-                }
-                call.respond(scope)
-            }
-            post<ScopeRequest>("/scope") { body ->
-                val user: User? = call.authentication.principal()
-                verify(user != null) { HttpStatusCode.Unauthorized to "You need to be Authenticated for this request!" }
-                db {
-                    user.attachScopes(scopeService)
-                    // Must be admin (from scopes) or superadmin (OAuth)
-                    verify(user.access.superAdmin || user.isAdmin) { HttpStatusCode.Forbidden to "You must be at least admin for this request!" }
-                    // Check if user is member of the scope they want to create or superadmin
-                    val fullScope = ScopeService.scope(body.name)
-                    val isMember = user.scopes.contains(fullScope)
-                    val isAdmin = user.isAdminOf(body.name)
-                    verify(user.access.superAdmin || isMember || isAdmin) { HttpStatusCode.Forbidden to "You must be a member or admin of the Scope you are trying to create!" }
-                    val already = scopeService.readForName(body.name).toList()
-                    verify(already.isNotEmpty()) { HttpStatusCode.Conflict to "The Scope '${body.name}' already exists!" }
-                    val scopes = body.toDTO()
-                    for (scope in scopes) {
-                        scopeService.create(scope)
+
+                    val scopeDTO = scopeService.readScope(scopeName) ?: return@db call.respond(HttpStatusCode.NotFound)
+
+                    val isMember = scopeDTO.attaches.contains(user.username)
+                    val isAdmin = user.isAdminOf(scopeName)
+                    verify(user.access.superAdmin || isMember || isAdmin) {
+                        HttpStatusCode.Forbidden to "You must be a member or admin of this scope!"
                     }
-                    call.respond(body)
+
+                    call.respond(scopeDTO)
+                }
+            }
+
+            delete("/scope/{scope}") {
+                val scopeName = call.parameters["scope"]
+                verify(scopeName != null) { HttpStatusCode.BadRequest to "You must provide a scope!" }
+                val user: User? = call.authentication.principal()
+                verify(user != null) { HttpStatusCode.Unauthorized to "You must be authenticated!" }
+
+                db {
+                    user.attachScopes(scopeService)
+                    verify(user.access.superAdmin) { HttpStatusCode.Forbidden to "Only superadmins can delete scopes!" }
+
+                    scopeService.deleteScope(scopeName)
+                    call.respond(HttpStatusCode.NoContent)
+                }
+            }
+
+            patch<ScopeUpdateAttachesRequest>("/scope/{scope}") { body ->
+                val scopeName = call.parameters["scope"]
+                verify(scopeName != null) { HttpStatusCode.BadRequest to "You must provide a scope!" }
+                val user: User? = call.authentication.principal()
+                verify(user != null) { HttpStatusCode.Unauthorized to "You must be authenticated!" }
+
+                db {
+                    user.attachScopes(scopeService)
+                    val resolvedScopeName = scopeName
+                    verify(user.isAdminOf(resolvedScopeName)) {
+                        HttpStatusCode.Forbidden to "You must be an admin of this scope to update members!"
+                    }
+
+                    scopeService.updateAttaches(resolvedScopeName, body.attaches)
+                    val updated = scopeService.readScope(resolvedScopeName)
+                    call.respond(updated!!)
+                }
+            }
+
+            post<ScopeCreateRequest>("/scope") { body ->
+                val user: User? = call.authentication.principal()
+                verify(user != null) { HttpStatusCode.Unauthorized to "You must be authenticated!" }
+
+                db {
+                    user.attachScopes(scopeService)
+                    verify(user.access.superAdmin) { HttpStatusCode.Forbidden to "Only superadmins can create or update scopes!" }
+
+                    scopeService.createScope(body.toDTO())
+                    call.respond(HttpStatusCode.OK)
                 }
             }
         }

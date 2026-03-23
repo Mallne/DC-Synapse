@@ -9,9 +9,10 @@ import org.jetbrains.exposed.v1.r2dbc.R2dbcTransaction
 import org.jetbrains.exposed.v1.r2dbc.SchemaUtils
 import org.jetbrains.exposed.v1.r2dbc.transactions.suspendTransaction
 import org.koin.core.annotation.Factory
+import org.koin.core.annotation.Provided
 
 @Factory
-class DatabaseService(config: Configuration) {
+class DatabaseService(@Provided config: Configuration) {
     val scm = Schema(config.data.schema)
     val dataConfig = config.data
 

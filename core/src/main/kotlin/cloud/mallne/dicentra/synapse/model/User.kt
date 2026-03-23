@@ -1,6 +1,7 @@
 package cloud.mallne.dicentra.synapse.model
 
 import cloud.mallne.dicentra.synapse.service.ScopeService
+import cloud.mallne.dicentra.synapse.service.ScopeService.Companion.Types
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -12,49 +13,39 @@ data class User(
     val access: AccessLevels,
 ) {
     private var dbScopes: List<String> = listOf()
-    private var isAdminOfScopes: Set<String> = emptySet()
 
     @RequiresTransactionContext
     suspend fun attachScopes(scopeService: ScopeService) {
-        val assignments = scopeService.getScopeAssignmentsForUser(username)
-        dbScopes = assignments.map { ScopeService.scope(it.scopeName) }
-        isAdminOfScopes = assignments.filter { it.isAdmin }.map { it.scopeName }.toSet()
+        dbScopes = scopeService.getUserScopes(username)
     }
 
     val valid
         get() = !locked && access.user
-    
+
     val scopes
-        get() = dbScopes + userScope + adminScopes
-    
+        get() = dbScopes + userScope
+
     val userScope
-        get() = ScopeService.scope(username)
-    
-    /**
-     * Returns admin scopes for scopes this user is admin of.
-     * e.g., if user is admin of "settings" scope, returns ["admin:settings"]
-     */
-    val adminScopes
-        get() = isAdminOfScopes.map { ScopeService.adminScope(it) }
+        get() = Types.USER.scope(username).name()
 
-    /**
-     * Checks if user is admin of a specific scope.
-     * SuperAdmin can admin any scope.
-     */
-    fun isAdminOf(scopeName: String): Boolean = 
-        access.superAdmin || isAdminOfScopes.contains(scopeName)
+    fun isAdminOf(scopeName: String): Boolean {
+        if (access.superAdmin) return true
+        if (scopeName == userScope) return true
+        return dbScopes.any { Types.ADMIN.canExpandOps(it) && it == Types.ADMIN.scope(scopeName).name() }
+    }
 
-    /**
-     * Checks if user has admin privileges (for any scope).
-     * SuperAdmin OR has at least one admin:* scope assignment.
-     */
-    val isAdmin: Boolean
-        get() = access.superAdmin || isAdminOfScopes.isNotEmpty()
+    fun canWriteTo(scopeName: String): Boolean {
+        if (access.superAdmin) return true
+        return dbScopes.any { Types.WRITE.canWrite(it) && it == Types.WRITE.scope(scopeName).name() }
+    }
+
+    fun isDirectMember(scopeName: String): Boolean {
+        return dbScopes.any { Types.READ.isDirectMember(it) && it == Types.READ.scope(scopeName).name() }
+    }
 
     @Serializable
     data class AccessLevels(
         val user: Boolean = true,
-        val admin: Boolean = false,
-        val superAdmin: Boolean = false,  // OAuth role - separate security concern
+        val superAdmin: Boolean = false,
     )
 }

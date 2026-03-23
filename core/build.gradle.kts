@@ -62,3 +62,10 @@ dependencies {
     api(libs.dc.aviator.plugin.synapse)
     api(libs.dc.polyfill)
 }
+
+
+koinCompiler {
+    userLogs = true
+    compileSafety =
+        false //the configuration gets injected with the application as a non Koin param https://github.com/InsertKoinIO/koin-compiler-plugin/issues/7
+}

@@ -6,9 +6,19 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 @ResponseObject
-data class ScopeRequest(
+data class ScopeCreateRequest(
     val name: String,
-    val attachments: List<String>,
+    val attaches: List<String> = emptyList(),
+    val attachesAdmin: List<String> = emptyList(),
 ) {
-    fun toDTO() = attachments.map { ScopeDTO(name = name, attaches = it) }
+    fun toDTO() = ScopeDTO(name = name, attaches = attaches, attachesAdmin = attachesAdmin)
+}
+
+@Serializable
+@ResponseObject
+data class ScopeUpdateAttachesRequest(
+    val name: String,
+    val attaches: List<String>,
+) {
+    fun toDTO() = ScopeDTO(name = name, attaches = attaches)
 }

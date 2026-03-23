@@ -1,12 +1,12 @@
 package cloud.mallne.dicentra.synapse.model.dto
 
+import cloud.mallne.dicentra.aviator.koas.OpenAPI
+import cloud.mallne.dicentra.aviator.model.AviatorServiceUtils
 import cloud.mallne.dicentra.synapse.model.Configuration
 import cloud.mallne.dicentra.synapse.model.dto.ServiceBundle.Companion.buildBundles
 import cloud.mallne.dicentra.synapse.service.CatalystGenerator
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionGroupRule
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionTransformationType
-import cloud.mallne.dicentra.aviator.koas.OpenAPI
-import cloud.mallne.dicentra.aviator.model.AviatorServiceUtils
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
