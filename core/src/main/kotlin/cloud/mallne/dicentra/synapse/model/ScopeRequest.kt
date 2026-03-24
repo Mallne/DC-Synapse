@@ -8,17 +8,27 @@ import kotlinx.serialization.Serializable
 @ResponseObject
 data class ScopeCreateRequest(
     val name: String,
-    val attaches: List<String> = emptyList(),
+    val attachesReads: List<String> = emptyList(),
+    val attachesWrites: List<String> = emptyList(),
     val attachesAdmin: List<String> = emptyList(),
 ) {
-    fun toDTO() = ScopeDTO(name = name, attaches = attaches, attachesAdmin = attachesAdmin)
+    fun toDTO() = ScopeDTO(
+        name = name,
+        attachesReads = attachesReads,
+        attachesWrites = attachesWrites,
+        attachesAdmin = attachesAdmin
+    )
 }
 
 @Serializable
 @ResponseObject
 data class ScopeUpdateAttachesRequest(
     val name: String,
-    val attaches: List<String>,
+    val attachesReads: List<String> = emptyList(),
+    val attachesWrites: List<String> = emptyList(),
 ) {
-    fun toDTO() = ScopeDTO(name = name, attaches = attaches)
+    fun toDTO() = ScopeDTO(
+        name = name, attachesReads = attachesReads,
+        attachesWrites = attachesWrites,
+    )
 }
