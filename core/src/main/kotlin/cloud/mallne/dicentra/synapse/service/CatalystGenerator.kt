@@ -1,16 +1,11 @@
 package cloud.mallne.dicentra.synapse.service
 
 import cloud.mallne.dicentra.aviator.core.AviatorExtensionSpec
+import cloud.mallne.dicentra.aviator.core.AviatorExtensionSpec.`x-dicentra-aviator`
 import cloud.mallne.dicentra.aviator.core.AviatorExtensionSpec.`x-dicentra-aviator-pluginMaterialization`
 import cloud.mallne.dicentra.aviator.core.AviatorExtensionSpec.`x-dicentra-aviator-serviceDelegateCall`
 import cloud.mallne.dicentra.aviator.core.AviatorExtensionSpec.`x-dicentra-aviator-serviceOptions`
 import cloud.mallne.dicentra.aviator.core.InflatedServiceOptions
-import cloud.mallne.dicentra.aviator.core.ServiceOptions
-import cloud.mallne.dicentra.aviator.koas.OpenAPI
-import cloud.mallne.dicentra.aviator.koas.Operation
-import cloud.mallne.dicentra.aviator.koas.PathItem
-import cloud.mallne.dicentra.aviator.koas.info.Info
-import cloud.mallne.dicentra.aviator.koas.servers.Server
 import cloud.mallne.dicentra.aviator.koas.typed.Route
 import cloud.mallne.dicentra.aviator.model.AviatorServiceUtils
 import cloud.mallne.dicentra.aviator.model.ServiceLocator
@@ -20,9 +15,10 @@ import cloud.mallne.dicentra.aviator.plugin.weaver.WeaverServiceObject
 import cloud.mallne.dicentra.synapse.model.Configuration
 import cloud.mallne.dicentra.synapse.statics.Serialization
 import io.ktor.http.*
+import io.ktor.openapi.*
+import io.ktor.openapi.ReferenceOr.*
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.encodeToJsonElement
-import kotlinx.serialization.json.jsonObject
 import org.koin.core.annotation.Provided
 import org.koin.core.annotation.Single
 
@@ -43,7 +39,7 @@ class CatalystGenerator(
         val options = if (rawOptions != null) {
             try {
                 AviatorServiceUtils.optionBundle<WeaverServiceObject>(rawOptions)
-                rawOptions.jsonObject.filterNot { it.key == "x-dicentra-weaver-schema" } as ServiceOptions
+                GenericElement(rawOptions.entries().filterNot { it.first == "x-dicentra-weaver-schema" })
             } catch (_: IllegalArgumentException) {
                 rawOptions
             }
@@ -54,35 +50,26 @@ class CatalystGenerator(
             SynapsePlugin.identity to json.encodeToJsonElement(SynapsePluginConfig(true))
         )
         return "/catalyst$queryParams" to PathItem(
-            post = Operation(
-                extensions = mapOf(
-                    AviatorExtensionSpec.ServiceLocator.O.key to locator.usable(),
-                    AviatorExtensionSpec.ServiceOptions.O.key to options,
-                    AviatorExtensionSpec.PluginMaterialization.O.key to json.encodeToJsonElement(plugins)
-                ),
-            )
+            post = Operation.build {
+                `x-dicentra-aviator-serviceDelegateCall` = locator
+                `x-dicentra-aviator-serviceOptions` = options
+                `x-dicentra-aviator-pluginMaterialization` = plugins
+            }
         )
     }
 
-    fun generateWrapper(paths: List<Pair<String, PathItem>>): OpenAPI {
+    fun generateWrapper(paths: List<Pair<String, PathItem>>): OpenApiDoc {
         val schema = if (configuration.catalyst.tlsEnabled) "https://" else "http://"
-        return OpenAPI(
-            extensions = mapOf(
-                AviatorExtensionSpec.Version.key to json.parseToJsonElement(
-                    AviatorExtensionSpec.SpecVersion
-                )
-            ),
-            servers = listOf(
-                Server(
-                    url = schema + configuration.catalyst.serverName
-                )
-            ),
-            info = Info(
+        return OpenApiDoc.build {
+            `x-dicentra-aviator` = AviatorExtensionSpec.SpecVersion
+            servers {
+                server(url = schema + configuration.catalyst.serverName)
+            }
+            info = OpenApiInfo(
                 title = configuration.catalyst.title,
                 description = configuration.catalyst.description,
                 version = AviatorExtensionSpec.SpecVersion
-            ),
-            paths = paths.toMap()
-        )
+            )
+        }.copy(paths = paths.associate { it.first to it.second.let(::Value) })
     }
 }

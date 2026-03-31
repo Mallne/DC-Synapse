@@ -1,10 +1,10 @@
 package cloud.mallne.dicentra.synapse.service
 
-import cloud.mallne.dicentra.aviator.koas.OpenAPI
 import cloud.mallne.dicentra.synapse.model.RequiresTransactionContext
 import cloud.mallne.dicentra.synapse.model.dto.APIServiceDTO
 import cloud.mallne.dicentra.synapse.statics.Serialization
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionTransformationType
+import io.ktor.openapi.*
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.singleOrNull
 import kotlinx.coroutines.flow.toList
@@ -33,7 +33,7 @@ import org.koin.core.annotation.Single
 @Single
 class APIDBService {
     object APIServiceData : IdTable<String>() {
-        val service = jsonb<OpenAPI>("service", Serialization())
+        val service = jsonb<OpenApiDoc>("service", Serialization())
         val scope = varchar("scope", 255).nullable()
         val created = datetime("created").defaultExpression(CurrentDateTime)
         val nativeTransformable = bool("native_transformable").default(true)
@@ -154,7 +154,7 @@ class APIDBService {
      *         match, an empty list is returned.
      */
     @RequiresTransactionContext
-    suspend fun readForScopes(scope: List<String>): List<APIServiceDTO> {
+    suspend fun readForScopes(scope: Collection<String>): List<APIServiceDTO> {
         return APIServiceData.selectAll()
             .where { APIServiceData.scope inList scope }
             .map {

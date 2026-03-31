@@ -1,11 +1,11 @@
 package cloud.mallne.dicentra.synapse.model.dto
 
+import cloud.mallne.dicentra.aviator.koas.typed.Route
+import cloud.mallne.dicentra.aviator.model.ServiceLocator
 import cloud.mallne.dicentra.synapse.service.CatalystGenerator
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionGroupRule
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionTransformationType
-import cloud.mallne.dicentra.aviator.koas.OpenAPI
-import cloud.mallne.dicentra.aviator.koas.typed.Route
-import cloud.mallne.dicentra.aviator.model.ServiceLocator
+import io.ktor.openapi.*
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -17,7 +17,7 @@ data class ServiceBundle(
     val groupRule: ServiceDefinitionGroupRule?
 ) {
     companion object {
-        fun List<ServiceBundle>.buildBundles(generator: CatalystGenerator): List<OpenAPI> {
+        fun List<ServiceBundle>.buildBundles(generator: CatalystGenerator): List<OpenApiDoc> {
             val catalystTransforms =
                 this.filter { it.transformationType == ServiceDefinitionTransformationType.Catalyst }
             val catalystRoutes = catalystTransforms.map {

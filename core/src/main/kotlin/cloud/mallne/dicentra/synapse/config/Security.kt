@@ -8,6 +8,7 @@ import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
+import io.ktor.server.routing.openapi.*
 import org.koin.ktor.ext.inject
 import org.slf4j.LoggerFactory
 
@@ -51,4 +52,6 @@ fun Application.configureSecurity() {
             }
         }
     }
+
+    registerBearerAuthSecurityScheme(bearerFormat = "JWT")
 }

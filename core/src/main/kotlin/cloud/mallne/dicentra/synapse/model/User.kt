@@ -12,7 +12,7 @@ data class User(
     val locked: Boolean = false,
     val access: AccessLevels,
 ) {
-    private var dbScopes: List<String> = listOf()
+    private var dbScopes: Map<String, Types> = mapOf()
 
     @RequiresTransactionContext
     suspend fun attachScopes(scopeService: ScopeService) {
@@ -26,21 +26,20 @@ data class User(
         get() = dbScopes + userScope
 
     val userScope
-        get() = Types.USER.scope(username).name()
+        get() = username to Types.USER
 
     fun isAdminOf(scopeName: String): Boolean {
         if (access.superAdmin) return true
-        if (scopeName == userScope) return true
-        return dbScopes.any { Types.ADMIN.canExpandOps(it) && it == Types.ADMIN.scope(scopeName).name() }
+        return dbScopes.any { it.value.canExpandOps && scopeName == it.key }
     }
 
     fun canWriteTo(scopeName: String): Boolean {
         if (access.superAdmin) return true
-        return dbScopes.any { Types.WRITE.canWrite(it) && it == Types.WRITE.scope(scopeName).name() }
+        return dbScopes.any { it.value.canWrite && scopeName == it.key }
     }
 
     fun isDirectMember(scopeName: String): Boolean {
-        return dbScopes.any { Types.READ.isDirectMember(it) && it == Types.READ.scope(scopeName).name() }
+        return dbScopes.any { scopeName == it.key }
     }
 
     @Serializable

@@ -1,12 +1,12 @@
 package cloud.mallne.dicentra.synapse.model.dto
 
-import cloud.mallne.dicentra.aviator.koas.OpenAPI
 import cloud.mallne.dicentra.aviator.model.AviatorServiceUtils
 import cloud.mallne.dicentra.synapse.model.Configuration
 import cloud.mallne.dicentra.synapse.model.dto.ServiceBundle.Companion.buildBundles
 import cloud.mallne.dicentra.synapse.service.CatalystGenerator
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionGroupRule
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionTransformationType
+import io.ktor.openapi.*
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -19,7 +19,7 @@ import kotlin.uuid.Uuid
 @Serializable
 data class APIServiceDTO @OptIn(ExperimentalUuidApi::class, ExperimentalTime::class) constructor(
     val id: String = Uuid.random().toString(),
-    val serviceDefinition: OpenAPI,
+    val serviceDefinition: OpenApiDoc,
     val scope: String? = null,
     val created: LocalDateTime = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()),
     val nativeTransformable: Boolean = true,
@@ -46,7 +46,7 @@ data class APIServiceDTO @OptIn(ExperimentalUuidApi::class, ExperimentalTime::cl
         return preferred ?: ServiceDefinitionGroupRule.ServiceLocator
     }
 
-    fun transformNative(): OpenAPI? {
+    fun transformNative(): OpenApiDoc? {
         return if (nativeTransformable) serviceDefinition else null
     }
 
@@ -80,7 +80,7 @@ data class APIServiceDTO @OptIn(ExperimentalUuidApi::class, ExperimentalTime::cl
             requestedTransformationType: ServiceDefinitionTransformationType = ServiceDefinitionTransformationType.Auto,
             requestedRule: ServiceDefinitionGroupRule? = null,
             catalystGenerator: CatalystGenerator
-        ): List<OpenAPI> {
+        ): List<OpenApiDoc> {
             val catalystTransforms =
                 this.transformGroups(catalystGenerator.configuration, requestedTransformationType, requestedRule)
             return catalystTransforms.buildBundles(catalystGenerator)

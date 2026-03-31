@@ -28,7 +28,7 @@ fun Application.catalyst() {
                     user?.attachScopes(scopeService)
                     val services = apiService.readPublic().toList().toMutableList()
                     if (user != null) {
-                        services.addAll(apiService.readForScopes(user.scopes))
+                        services.addAll(apiService.readForScopes(user.scopes.keys))
                     }
                     val transformationType = ServiceDefinitionTransformationType.fromString(
                         call.request.queryParameters["transformationType"]

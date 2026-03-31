@@ -1,9 +1,7 @@
 package cloud.mallne.dicentra.synapse.routes
 
+import cloud.mallne.dicentra.aviator.core.AviatorExtensionSpec.`x-dicentra-aviator-serviceDelegateCall`
 import cloud.mallne.dicentra.aviator.core.ServiceMethods
-import cloud.mallne.dicentra.aviator.koas.extensions.ReferenceOr
-import cloud.mallne.dicentra.aviator.koas.io.Schema
-import cloud.mallne.dicentra.aviator.koas.parameters.Parameter
 import cloud.mallne.dicentra.aviator.model.ServiceLocator
 import cloud.mallne.dicentra.synapse.model.Configuration
 import cloud.mallne.dicentra.synapse.model.DiscoveryRequest
@@ -14,6 +12,7 @@ import cloud.mallne.dicentra.synapse.service.APIDBService
 import cloud.mallne.dicentra.synapse.service.CatalystGenerator
 import cloud.mallne.dicentra.synapse.service.DatabaseService
 import cloud.mallne.dicentra.synapse.service.DiscoveryGenerator
+import cloud.mallne.dicentra.synapse.service.DiscoveryGenerator.Companion.bearer
 import cloud.mallne.dicentra.synapse.service.ScopeService
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionGroupRule
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionTransformationType
@@ -23,6 +22,8 @@ import io.ktor.server.application.*
 import io.ktor.server.auth.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import io.ktor.server.routing.openapi.*
+import io.ktor.utils.io.*
 import org.koin.ktor.ext.inject
 
 /**
@@ -58,6 +59,7 @@ import org.koin.ktor.ext.inject
  * Responses include relevant HTTP status codes and error messages for failed
  * verification checks.
  */
+@OptIn(ExperimentalKtorApi::class)
 fun Application.discovery() {
     val catalystGenerator by inject<CatalystGenerator>()
     val apiService by inject<APIDBService>()
@@ -65,105 +67,6 @@ fun Application.discovery() {
     val config by inject<Configuration>()
     val scopeService by inject<ScopeService>()
     val db by inject<DatabaseService>()
-
-    discoveryGenerator.memorize {
-        path("/services") {
-            operation(
-                id = "ServiceDiscovery",
-                method = HttpMethod.Get,
-                locator = ServiceLocator("${config.server.baseLocator}DiscoveryBundle", ServiceMethods.GATHER),
-                summary = "Get all available services",
-                parameter = listOf(
-                    Parameter(
-                        name = "transformationType",
-                        input = Parameter.Input.Query,
-                        description = "The transformation type to apply to the service definitions",
-                        schema = ReferenceOr.value(
-                            Schema(
-                                type = Schema.Type.Basic.String
-                            )
-                        )
-                    ),
-                    Parameter(
-                        name = "groupRule",
-                        input = Parameter.Input.Query,
-                        description = "The grouping rule to apply to the service definitions",
-                        schema = ReferenceOr.value(
-                            Schema(
-                                type = Schema.Type.Basic.String
-                            )
-                        )
-                    )
-                ),
-                authenticationStrategy = DiscoveryGenerator.Companion.AuthenticationStrategy.OPTIONAL
-            )
-            operation(
-                id = "ServiceUpsert",
-                method = HttpMethod.Post,
-                locator = ServiceLocator("${config.server.baseLocator}DiscoveryEndpoint", ServiceMethods.UPSERT),
-                summary = "Create or update a service definition",
-                authenticationStrategy = DiscoveryGenerator.Companion.AuthenticationStrategy.MANDATORY
-            )
-        }
-        path("/services/{id}") {
-            operation(
-                id = "SpecificService",
-                method = HttpMethod.Get,
-                locator = ServiceLocator("${config.server.baseLocator}DiscoveryEndpoint", ServiceMethods.GATHER),
-                summary = "Get a specific service definition",
-                authenticationStrategy = DiscoveryGenerator.Companion.AuthenticationStrategy.MANDATORY,
-                parameter = listOf(
-                    Parameter(
-                        name = "id",
-                        input = Parameter.Input.Path,
-                        schema = ReferenceOr.value(
-                            Schema(
-                                type = Schema.Type.Basic.String
-                            )
-                        )
-                    )
-                )
-            )
-            operation(
-                id = "DeleteService",
-                method = HttpMethod.Delete,
-                locator = ServiceLocator("${config.server.baseLocator}DiscoveryEndpoint", ServiceMethods.DELETE),
-                summary = "Delete a specific service definition",
-                authenticationStrategy = DiscoveryGenerator.Companion.AuthenticationStrategy.MANDATORY,
-                parameter = listOf(
-                    Parameter(
-                        name = "id",
-                        input = Parameter.Input.Path,
-                        schema = ReferenceOr.value(
-                            Schema(
-                                type = Schema.Type.Basic.String
-                            )
-                        )
-                    )
-                )
-            )
-        }
-        path("/services/scope/{scope}") {
-            operation(
-                id = "ScopedServices",
-                method = HttpMethod.Get,
-                locator = ServiceLocator("${config.server.baseLocator}DiscoveryScope", ServiceMethods.GATHER),
-                summary = "Get all services linked to a specific scope",
-                authenticationStrategy = DiscoveryGenerator.Companion.AuthenticationStrategy.MANDATORY,
-                parameter = listOf(
-                    Parameter(
-                        name = "scope",
-                        input = Parameter.Input.Path,
-                        schema = ReferenceOr.value(
-                            Schema(
-                                type = Schema.Type.Basic.String
-                            )
-                        )
-                    )
-                )
-            )
-        }
-    }
     routing {
         authenticate(optional = true) {
             get("/services") {
@@ -172,7 +75,7 @@ fun Application.discovery() {
                     user?.attachScopes(scopeService)
                     val services = apiService.readPublic().toMutableList()
                     if (user != null) {
-                        services.addAll(apiService.readForScopes(user.scopes))
+                        services.addAll(apiService.readForScopes(user.scopes.keys))
                     }
                     val transformationType = ServiceDefinitionTransformationType.fromString(
                         call.request.queryParameters["transformationType"]
@@ -183,7 +86,7 @@ fun Application.discovery() {
                         call.request.queryParameters["groupRule"]
                             ?: ServiceDefinitionGroupRule.ServiceLocator.name
                     )
-                    val thisServer = discoveryGenerator.memory.build()
+                    val thisServer = discoveryGenerator.boilerplate() + call.application.routingRoot.descendants()
 
                     val definitions = services.transform(
                         requestedTransformationType = transformationType,
@@ -196,9 +99,18 @@ fun Application.discovery() {
                     )
                     call.respond(response)
                 }
+            }.describe {
+                `x-dicentra-aviator-serviceDelegateCall` =
+                    ServiceLocator("${config.server.baseLocator}DiscoveryBundle", ServiceMethods.GATHER)
+                summary = "Get all available services"
+                operationId = "ServiceDiscovery"
+                security {
+                    optional()
+                    bearer()
+                }
             }
         }
-        authenticate(optional = false) {
+        authenticate {
             get("/services/{id}") {
                 val id = call.parameters["id"]
                 verify(id != null) { HttpStatusCode.BadRequest to "You must enter an ID!" }
@@ -217,6 +129,14 @@ fun Application.discovery() {
                     )
                     call.respond(discoveryResponse)
                 }
+            }.describe {
+                `x-dicentra-aviator-serviceDelegateCall` =
+                    ServiceLocator("${config.server.baseLocator}DiscoveryEndpoint", ServiceMethods.GATHER)
+                summary = "Get a specific service definition"
+                operationId = "SpecificService"
+                security {
+                    bearer()
+                }
             }
 
             get("/services/scope/{scope}") {
@@ -233,6 +153,14 @@ fun Application.discovery() {
                         inDB.map { it.serviceDefinition }.toList(),
                     )
                     call.respond(discoveryResponse)
+                }
+            }.describe {
+                `x-dicentra-aviator-serviceDelegateCall` =
+                    ServiceLocator("${config.server.baseLocator}DiscoveryScope", ServiceMethods.GATHER)
+                summary = "Get all services linked to a specific scope"
+                operationId = "ScopedServices"
+                security {
+                    bearer()
                 }
             }
 
@@ -260,6 +188,14 @@ fun Application.discovery() {
                     }
                     call.respond(body.id)
                 }
+            }.describe {
+                `x-dicentra-aviator-serviceDelegateCall` =
+                    ServiceLocator("${config.server.baseLocator}DiscoveryEndpoint", ServiceMethods.UPSERT)
+                summary = "Create or update a service definition"
+                operationId = "ServiceUpsert"
+                security {
+                    bearer()
+                }
             }
 
             delete("/services/{id}") {
@@ -281,6 +217,14 @@ fun Application.discovery() {
                     }
                     apiService.delete(inDB.id)
                     call.respond(inDB.id)
+                }
+            }.describe {
+                `x-dicentra-aviator-serviceDelegateCall` =
+                    ServiceLocator("${config.server.baseLocator}DiscoveryEndpoint", ServiceMethods.DELETE)
+                summary = "Delete a specific service definition"
+                operationId = "DeleteService"
+                security {
+                    bearer()
                 }
             }
         }

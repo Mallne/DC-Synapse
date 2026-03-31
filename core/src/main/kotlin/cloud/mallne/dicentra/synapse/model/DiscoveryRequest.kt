@@ -1,11 +1,11 @@
 package cloud.mallne.dicentra.synapse.model
 
 import cloud.mallne.dicentra.aviator.client.mock.MockConverter
-import cloud.mallne.dicentra.aviator.koas.OpenAPI
 import cloud.mallne.dicentra.synapse.model.dto.APIServiceDTO
 import cloud.mallne.dicentra.synapse.statics.ResponseObject
 import cloud.mallne.dicentra.synapse.statics.Serialization
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionTransformationType
+import io.ktor.openapi.*
 import kotlinx.serialization.Serializable
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
@@ -15,7 +15,7 @@ import kotlin.uuid.Uuid
 data class DiscoveryRequest @OptIn(ExperimentalUuidApi::class) constructor(
     val id: String = Uuid.random().toString(),
     val forScope: String? = null,
-    val service: OpenAPI,
+    val service: OpenApiDoc,
     val nativeTransformable: Boolean = true,
     val catalystTransformable: Boolean = true,
     val aggregateApi: Boolean = true,
