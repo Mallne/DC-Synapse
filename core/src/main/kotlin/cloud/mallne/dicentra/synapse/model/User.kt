@@ -26,7 +26,7 @@ data class User(
         get() = dbScopes + userScope
 
     val userScope
-        get() = username to Types.USER
+        get() = "user:$username" to Types.USER
 
     fun isAdminOf(scopeName: String): Boolean {
         if (access.superAdmin) return true

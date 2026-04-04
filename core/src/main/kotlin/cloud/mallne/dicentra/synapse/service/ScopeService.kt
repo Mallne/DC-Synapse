@@ -1,5 +1,6 @@
 package cloud.mallne.dicentra.synapse.service
 
+import cloud.mallne.dicentra.polyfill.ensure
 import cloud.mallne.dicentra.synapse.model.RequiresTransactionContext
 import cloud.mallne.dicentra.synapse.model.dto.ScopeDTO
 import kotlinx.coroutines.flow.map
@@ -28,6 +29,7 @@ class ScopeService {
 
     @RequiresTransactionContext
     suspend fun createScope(scopeDTO: ScopeDTO) {
+        ensure(scopeDTO.name.isNotBlank() && !scopeDTO.name.contains(":")) { IllegalArgumentException("Scope name must be non-empty and not contain ':'") }
         Scopes.deleteWhere { Scopes.scopeName.eq(scopeDTO.name) }
 
         val map = mutableMapOf<String, Types>()
