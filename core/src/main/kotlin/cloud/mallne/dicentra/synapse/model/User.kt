@@ -3,6 +3,7 @@ package cloud.mallne.dicentra.synapse.model
 import cloud.mallne.dicentra.synapse.service.ScopeService
 import cloud.mallne.dicentra.synapse.service.ScopeService.Companion.Types
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 @Serializable
 data class User(
@@ -12,6 +13,7 @@ data class User(
     val locked: Boolean = false,
     val access: AccessLevels,
 ) {
+    @Transient
     private var dbScopes: Map<String, Types> = mapOf()
 
     @RequiresTransactionContext
