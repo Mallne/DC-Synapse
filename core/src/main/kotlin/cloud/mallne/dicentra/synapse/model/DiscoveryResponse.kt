@@ -7,6 +7,6 @@ import kotlinx.serialization.Serializable
 @Serializable
 @ResponseObject
 data class DiscoveryResponse(
-    val principal: User? = null,
+    val principal: User.UserDTO? = null,
     val services: List<OpenApiDoc>,
 )

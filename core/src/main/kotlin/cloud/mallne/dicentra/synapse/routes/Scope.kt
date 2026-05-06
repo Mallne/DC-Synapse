@@ -11,6 +11,7 @@ import cloud.mallne.dicentra.synapse.service.DiscoveryGenerator.Companion.bearer
 import cloud.mallne.dicentra.synapse.service.ScopeService
 import cloud.mallne.dicentra.synapse.statics.verify
 import io.ktor.http.*
+import io.ktor.openapi.jsonSchema
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
 import io.ktor.server.response.*
@@ -49,8 +50,20 @@ fun Application.scopeRoutes() {
                 `x-dicentra-aviator-serviceDelegateCall` =
                     ServiceLocator("${config.server.baseLocator}Scope", ServiceMethods.GATHER)
                 summary = "Get a scope with its members and admins"
-                security { bearer() }
-
+                responses {
+                    HttpStatusCode.OK {
+                        schema = jsonSchema<ScopeDTO>()
+                    }
+                    HttpStatusCode.NotFound {
+                        description = "Scope not found"
+                    }
+                    HttpStatusCode.BadRequest {
+                        ContentType.Text.Plain()
+                    }
+                    HttpStatusCode.Unauthorized {
+                        ContentType.Text.Plain()
+                    }
+                }
             }
 
             delete("/scope/{scope}") {
@@ -71,7 +84,23 @@ fun Application.scopeRoutes() {
                 `x-dicentra-aviator-serviceDelegateCall` =
                     ServiceLocator("${config.server.baseLocator}Scope", ServiceMethods.DELETE)
                 summary = "Delete a scope - requires superadmin"
-                security { bearer() }
+                responses {
+                    HttpStatusCode.NoContent {
+                        description = "Scope deleted"
+                    }
+                    HttpStatusCode.NotFound {
+                        description = "Scope not found"
+                    }
+                    HttpStatusCode.BadRequest {
+                        ContentType.Text.Plain()
+                    }
+                    HttpStatusCode.Unauthorized {
+                        ContentType.Text.Plain()
+                    }
+                    HttpStatusCode.Forbidden {
+                        ContentType.Text.Plain()
+                    }
+                }
             }
 
             patch<ScopeDTO>("/scope/{scope}") { body ->
@@ -95,7 +124,23 @@ fun Application.scopeRoutes() {
                 summary = "Update the attaches (members) of a scope - requires scope admin"
                 `x-dicentra-aviator-serviceDelegateCall` =
                     ServiceLocator("${config.server.baseLocator}Scope", ServiceMethods.UPSERT)
-                security { bearer() }
+                responses {
+                    HttpStatusCode.OK {
+                        schema = jsonSchema<ScopeDTO>()
+                    }
+                    HttpStatusCode.NotFound {
+                        description = "Scope not found"
+                    }
+                    HttpStatusCode.BadRequest {
+                        ContentType.Text.Plain()
+                    }
+                    HttpStatusCode.Unauthorized {
+                        ContentType.Text.Plain()
+                    }
+                    HttpStatusCode.Forbidden {
+                        ContentType.Text.Plain()
+                    }
+                }
             }
 
             post<ScopeDTO>("/scope") { body ->
@@ -116,7 +161,17 @@ fun Application.scopeRoutes() {
                 `x-dicentra-aviator-serviceDelegateCall` =
                     ServiceLocator("${config.server.baseLocator}Scope", ServiceMethods.CREATE)
                 summary = "Create a new scope - requires superadmin"
-                security { bearer() }
+                responses {
+                    HttpStatusCode.OK {
+                        description = "Scope created"
+                    }
+                    HttpStatusCode.BadRequest {
+                        ContentType.Text.Plain()
+                    }
+                    HttpStatusCode.Unauthorized {
+                        ContentType.Text.Plain()
+                    }
+                }
             }
         }
     }

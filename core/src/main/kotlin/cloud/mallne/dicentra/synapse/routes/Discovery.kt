@@ -8,16 +8,12 @@ import cloud.mallne.dicentra.synapse.model.DiscoveryRequest
 import cloud.mallne.dicentra.synapse.model.DiscoveryResponse
 import cloud.mallne.dicentra.synapse.model.User
 import cloud.mallne.dicentra.synapse.model.dto.APIServiceDTO.Companion.transform
-import cloud.mallne.dicentra.synapse.service.APIDBService
-import cloud.mallne.dicentra.synapse.service.CatalystGenerator
-import cloud.mallne.dicentra.synapse.service.DatabaseService
-import cloud.mallne.dicentra.synapse.service.DiscoveryGenerator
-import cloud.mallne.dicentra.synapse.service.DiscoveryGenerator.Companion.bearer
-import cloud.mallne.dicentra.synapse.service.ScopeService
+import cloud.mallne.dicentra.synapse.service.*
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionGroupRule
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionTransformationType
 import cloud.mallne.dicentra.synapse.statics.verify
 import io.ktor.http.*
+import io.ktor.openapi.*
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
 import io.ktor.server.response.*
@@ -78,15 +74,16 @@ fun Application.discovery() {
                         services.addAll(apiService.readForScopes(user.scopes.keys))
                     }
                     val transformationType = ServiceDefinitionTransformationType.fromString(
-                        call.request.queryParameters["transformationType"]
+                        call.queryParameters["transformationType"]
                             ?: ServiceDefinitionTransformationType.Auto.name
                     )
 
                     val groupRule = ServiceDefinitionGroupRule.fromString(
-                        call.request.queryParameters["groupRule"]
+                        call.queryParameters["groupRule"]
                             ?: ServiceDefinitionGroupRule.ServiceLocator.name
                     )
-                    val thisServer = discoveryGenerator.boilerplate() + call.application.routingRoot.descendants()
+                    val thisServer =
+                        discoveryGenerator.boilerplate() + findSecuritySchemes() + call.application.routingRoot.descendants()
 
                     val definitions = services.transform(
                         requestedTransformationType = transformationType,
@@ -94,7 +91,7 @@ fun Application.discovery() {
                         catalystGenerator = catalystGenerator,
                     ) + thisServer
                     val response = DiscoveryResponse(
-                        user,
+                        user?.toDTO(),
                         definitions,
                     )
                     call.respond(response)
@@ -104,9 +101,15 @@ fun Application.discovery() {
                     ServiceLocator("${config.server.baseLocator}DiscoveryBundle", ServiceMethods.GATHER)
                 summary = "Get all available services"
                 operationId = "ServiceDiscovery"
-                security {
-                    optional()
-                    bearer()
+                parameters {
+                    query("transformationType")
+                    query("groupRule")
+                }
+                responses {
+                    HttpStatusCode.OK {
+                        description = "List of Userscoped Service Definitions"
+                        schema = jsonSchema<DiscoveryResponse>()
+                    }
                 }
             }
         }
@@ -124,7 +127,7 @@ fun Application.discovery() {
                         HttpStatusCode.Forbidden to "You must be a member of the Scope of the Service Definition you are trying to obtain!"
                     }
                     val discoveryResponse = DiscoveryResponse(
-                        user,
+                        user.toDTO(),
                         listOf(inDB.serviceDefinition),
                     )
                     call.respond(discoveryResponse)
@@ -134,8 +137,19 @@ fun Application.discovery() {
                     ServiceLocator("${config.server.baseLocator}DiscoveryEndpoint", ServiceMethods.GATHER)
                 summary = "Get a specific service definition"
                 operationId = "SpecificService"
-                security {
-                    bearer()
+                responses {
+                    HttpStatusCode.OK {
+                        schema = jsonSchema<DiscoveryResponse>()
+                    }
+                    HttpStatusCode.Unauthorized {
+                        ContentType.Text.Plain()
+                    }
+                    HttpStatusCode.Forbidden {
+                        ContentType.Text.Plain()
+                    }
+                    HttpStatusCode.NotFound {
+                        ContentType.Text.Plain()
+                    }
                 }
             }
 
@@ -149,7 +163,7 @@ fun Application.discovery() {
                     verify(user.access.superAdmin || user.scopes.contains(scope)) { HttpStatusCode.Forbidden to "You must be a member of the Scope you are trying to obtain!" }
                     val inDB = scope.let { apiService.readForScope(it) }
                     val discoveryResponse = DiscoveryResponse(
-                        user,
+                        user.toDTO(),
                         inDB.map { it.serviceDefinition }.toList(),
                     )
                     call.respond(discoveryResponse)
@@ -159,8 +173,22 @@ fun Application.discovery() {
                     ServiceLocator("${config.server.baseLocator}DiscoveryScope", ServiceMethods.GATHER)
                 summary = "Get all services linked to a specific scope"
                 operationId = "ScopedServices"
-                security {
-                    bearer()
+                responses {
+                    HttpStatusCode.OK {
+                        schema = jsonSchema<DiscoveryResponse>()
+                    }
+                    HttpStatusCode.BadRequest {
+                        ContentType.Text.Plain()
+                    }
+                    HttpStatusCode.Unauthorized {
+                        ContentType.Text.Plain()
+                    }
+                    HttpStatusCode.Forbidden {
+                        ContentType.Text.Plain()
+                    }
+                    HttpStatusCode.NotFound {
+                        ContentType.Text.Plain()
+                    }
                 }
             }
 
@@ -193,8 +221,16 @@ fun Application.discovery() {
                     ServiceLocator("${config.server.baseLocator}DiscoveryEndpoint", ServiceMethods.UPSERT)
                 summary = "Create or update a service definition"
                 operationId = "ServiceUpsert"
-                security {
-                    bearer()
+                responses {
+                    HttpStatusCode.OK {
+                        ContentType.Text.Plain()
+                    }
+                    HttpStatusCode.Unauthorized {
+                        ContentType.Text.Plain()
+                    }
+                    HttpStatusCode.Forbidden {
+                        ContentType.Text.Plain()
+                    }
                 }
             }
 
@@ -223,8 +259,22 @@ fun Application.discovery() {
                     ServiceLocator("${config.server.baseLocator}DiscoveryEndpoint", ServiceMethods.DELETE)
                 summary = "Delete a specific service definition"
                 operationId = "DeleteService"
-                security {
-                    bearer()
+                responses {
+                    HttpStatusCode.OK {
+                        ContentType.Text.Plain()
+                    }
+                    HttpStatusCode.Unauthorized {
+                        ContentType.Text.Plain()
+                    }
+                    HttpStatusCode.Forbidden {
+                        ContentType.Text.Plain()
+                    }
+                    HttpStatusCode.BadRequest {
+                        ContentType.Text.Plain()
+                    }
+                    HttpStatusCode.NotFound {
+                        ContentType.Text.Plain()
+                    }
                 }
             }
         }

@@ -2,10 +2,10 @@ package cloud.mallne.dicentra.synapse.model
 
 import cloud.mallne.dicentra.synapse.service.ScopeService
 import cloud.mallne.dicentra.synapse.service.ScopeService.Companion.Types
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 
-@Serializable
 data class User(
     val name: String,
     val email: String,
@@ -21,12 +21,15 @@ data class User(
         dbScopes = scopeService.getUserScopes(username)
     }
 
+    @EncodeDefault
     val valid
         get() = !locked && access.user
 
+    @EncodeDefault
     val scopes
         get() = dbScopes + userScope
 
+    @EncodeDefault
     val userScope
         get() = "user:$username" to Types.USER
 
@@ -37,12 +40,35 @@ data class User(
 
     fun canWriteTo(scopeName: String): Boolean {
         if (access.superAdmin) return true
-        return dbScopes.any { it.value.canWrite && scopeName == it.key }
+        return scopes.any { it.value.canWrite && scopeName == it.key }
     }
 
     fun isDirectMember(scopeName: String): Boolean {
-        return dbScopes.any { scopeName == it.key }
+        return scopes.any { scopeName == it.key }
     }
+
+    fun toDTO() = UserDTO(
+        name = name,
+        email = email,
+        username = username,
+        locked = locked,
+        access = access,
+        scopes = scopes,
+        userScope = userScope,
+        valid = valid
+    )
+
+    @Serializable
+    data class UserDTO(
+        val name: String,
+        val email: String,
+        val username: String,
+        val locked: Boolean = false,
+        val access: AccessLevels,
+        val scopes: Map<String, Types> = mapOf(),
+        val userScope: Pair<String, Types> = "user:$username" to Types.USER,
+        val valid: Boolean = !locked && access.user,
+    )
 
     @Serializable
     data class AccessLevels(

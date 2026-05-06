@@ -20,6 +20,9 @@ class DiscoveryGenerator(
             servers {
                 server(schema + configuration.server.hostname)
             }
+            security {
+                
+            }
             info = OpenApiInfo(
                 title = configuration.server.info,
                 description = configuration.server.description,

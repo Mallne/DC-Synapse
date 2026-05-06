@@ -10,6 +10,7 @@ import cloud.mallne.dicentra.synapse.service.DiscoveryGenerator.Companion.bearer
 import cloud.mallne.dicentra.synapse.service.ScopeService
 import cloud.mallne.dicentra.synapse.statics.verify
 import io.ktor.http.*
+import io.ktor.openapi.jsonSchema
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
 import io.ktor.server.response.*
@@ -41,15 +42,20 @@ fun Application.user() {
                     user?.attachScopes(scopeService)
                 }
                 verify(user != null) { HttpStatusCode.Unauthorized to "You need to be Authenticated for this request!" }
-                call.respond(user)
+                call.respond(user.toDTO())
             }.describe {
                 operationId = "Userinformation"
                 summary = "Get the current user's profile"
-                security {
-                    bearer()
-                }
                 `x-dicentra-aviator-serviceDelegateCall` =
                     ServiceLocator("${config.server.baseLocator}User", ServiceMethods.GATHER)
+                responses {
+                    HttpStatusCode.OK {
+                        schema = jsonSchema<User.UserDTO>()
+                    }
+                    HttpStatusCode.Unauthorized {
+                        ContentType.Text.Plain()
+                    }
+                }
             }
         }
     }

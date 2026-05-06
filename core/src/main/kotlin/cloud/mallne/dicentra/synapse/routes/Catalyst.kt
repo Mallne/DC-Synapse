@@ -45,7 +45,7 @@ fun Application.catalyst() {
                         catalystGenerator = catalystGenerator,
                     )
                     val response = DiscoveryResponse(
-                        user,
+                        user?.toDTO(),
                         definitions,
                     )
                     call.respond(response)
