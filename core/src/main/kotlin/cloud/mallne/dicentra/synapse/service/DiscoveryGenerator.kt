@@ -21,19 +21,13 @@ class DiscoveryGenerator(
                 server(schema + configuration.server.hostname)
             }
             security {
-                
+
             }
             info = OpenApiInfo(
                 title = configuration.server.info,
                 description = configuration.server.description,
                 version = AviatorExtensionSpec.SpecVersion
             )
-        }
-    }
-
-    companion object {
-        fun Security.Builder.bearer(scopes: List<String> = emptyList()) {
-            requirement(AuthenticationRouteSelector.DEFAULT_NAME, scopes)
         }
     }
 }
