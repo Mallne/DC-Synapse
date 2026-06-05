@@ -3,9 +3,9 @@ package cloud.mallne.dicentra.synapse.routes
 import cloud.mallne.dicentra.aviator.core.AviatorExtensionSpec.`x-dicentra-aviator-serviceDelegateCall`
 import cloud.mallne.dicentra.aviator.core.ServiceMethods
 import cloud.mallne.dicentra.aviator.model.ServiceLocator
-import cloud.mallne.dicentra.synapse.model.Configuration
 import cloud.mallne.dicentra.synapse.model.DiscoveryRequest
 import cloud.mallne.dicentra.synapse.model.DiscoveryResponse
+import cloud.mallne.dicentra.synapse.model.SynapseConfig
 import cloud.mallne.dicentra.synapse.model.User
 import cloud.mallne.dicentra.synapse.model.dto.APIServiceDTO.Companion.transform
 import cloud.mallne.dicentra.synapse.service.*
@@ -16,6 +16,7 @@ import io.ktor.http.*
 import io.ktor.openapi.*
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
+import io.ktor.server.config.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.routing.openapi.*
@@ -60,7 +61,7 @@ fun Application.discovery() {
     val catalystGenerator by inject<CatalystGenerator>()
     val apiService by inject<APIDBService>()
     val discoveryGenerator by inject<DiscoveryGenerator>()
-    val config by inject<Configuration>()
+    val config = environment.config.getAs<SynapseConfig>()
     val scopeService by inject<ScopeService>()
     val db by inject<DatabaseService>()
     routing {

@@ -1,6 +1,6 @@
 package cloud.mallne.dicentra.synapse.statics
 
-import cloud.mallne.dicentra.synapse.model.Configuration
+import cloud.mallne.dicentra.synapse.model.SynapseConfig
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -8,7 +8,7 @@ enum class ServiceDefinitionTransformationType {
     Auto, Native, Catalyst;
 
     fun distill(
-        config: Configuration,
+        config: SynapseConfig,
         preferred: ServiceDefinitionTransformationType = config.preferredTransform,
     ): ServiceDefinitionTransformationType? {
         val finalType = if (this == Auto) if (preferred == Auto) config.preferredTransform else preferred else this
@@ -16,7 +16,7 @@ enum class ServiceDefinitionTransformationType {
     }
 
     fun canUse(
-        config: Configuration,
+        config: SynapseConfig,
         preferred: ServiceDefinitionTransformationType = config.preferredTransform,
         native: Boolean = true,
         catalyst: Boolean = config.catalyst.enabled,

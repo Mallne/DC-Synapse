@@ -1,9 +1,13 @@
 package cloud.mallne.dicentra.synapse.model
 
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonIgnoreUnknownKeys
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
+@JsonIgnoreUnknownKeys
 data class IntrospectionResponse(
     val exp: Long,
     val iat: Long,
@@ -26,12 +30,10 @@ data class IntrospectionResponse(
     @SerialName("client_id")
     val clientId: String,
 ) {
-    fun toUser(config: Configuration.Nested.SecurityConfiguration): User {
-        // Access levels are derived from scopes after attachScopes() is called
-        // Initially, user = true for any authenticated user
+    fun toUser(config: Security): User {
         val acl = User.AccessLevels(
             user = groups.contains(config.groups.user),
-            superAdmin = groups.contains(config.groups.superAdmin)
+            superAdmin = groups.contains(config.groups.superadmin)
         )
         val locked = config.enabled && !active && !emailVerified
         return User(name, email, preferredUsername, locked, acl)

@@ -1,10 +1,11 @@
 package cloud.mallne.dicentra.synapse.config
 
-import cloud.mallne.dicentra.synapse.model.Configuration
+import cloud.mallne.dicentra.synapse.model.SynapseConfig
 import cloud.mallne.dicentra.synapse.service.APIDBService
 import cloud.mallne.dicentra.synapse.service.DatabaseService
 import cloud.mallne.dicentra.synapse.service.ScopeService
 import io.ktor.server.application.*
+import io.ktor.server.config.*
 import kotlinx.coroutines.launch
 import org.flywaydb.core.Flyway
 import org.flywaydb.core.api.output.MigrateResult
@@ -16,7 +17,7 @@ import org.slf4j.LoggerFactory
 import java.io.File
 
 fun Application.configureDatabase(vararg tables: Table = arrayOf(APIDBService.APIServiceData, ScopeService.Scopes)) {
-    val config by inject<Configuration>()
+    val config = environment.config.getAs<SynapseConfig>()
     val databaseService by inject<DatabaseService>()
     val log = LoggerFactory.getLogger("ConfigureDatabase")
     launch {
@@ -36,8 +37,8 @@ fun Application.configureDatabase(vararg tables: Table = arrayOf(APIDBService.AP
 }
 
 @OptIn(ExperimentalDatabaseMigrationApi::class)
-private suspend fun migration(config: Configuration, vararg tables: Table): File {
-    val path = config.data.migrationDirectory.first()
+private suspend fun migration(config: SynapseConfig, vararg tables: Table): File {
+    val path = config.data.migrations.first()
     val location = File(path)
     location.mkdirs()
     val created = MigrationUtils.generateMigrationScript(
@@ -48,11 +49,11 @@ private suspend fun migration(config: Configuration, vararg tables: Table): File
     return created
 }
 
-private fun flyway(config: Configuration): MigrateResult =
+private fun flyway(config: SynapseConfig): MigrateResult =
     Flyway.configure()
         .defaultSchema(config.data.schema)
         .dataSource("jdbc:${config.data.url}", config.data.user, config.data.password)
-        .locations(*config.data.migrationDirectory.toTypedArray())
-        .callbackLocations(*config.data.callbackDirectory.toTypedArray())
+        .locations(*config.data.migrations.toTypedArray())
+        .callbackLocations(*config.data.callbacks.toTypedArray())
         .load()
         .migrate()

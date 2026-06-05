@@ -12,7 +12,7 @@ import cloud.mallne.dicentra.aviator.model.ServiceLocator
 import cloud.mallne.dicentra.aviator.plugin.synapse.SynapsePlugin
 import cloud.mallne.dicentra.aviator.plugin.synapse.SynapsePluginConfig
 import cloud.mallne.dicentra.aviator.plugin.weaver.WeaverServiceObject
-import cloud.mallne.dicentra.synapse.model.Configuration
+import cloud.mallne.dicentra.synapse.model.SynapseConfig
 import cloud.mallne.dicentra.synapse.statics.Serialization
 import io.ktor.http.*
 import io.ktor.openapi.*
@@ -24,7 +24,7 @@ import org.koin.core.annotation.Single
 
 @Single
 class CatalystGenerator(
-    @Provided val configuration: Configuration,
+    @Provided val configuration: SynapseConfig,
     val json: Json = Serialization(),
 ) {
     fun generateFor(

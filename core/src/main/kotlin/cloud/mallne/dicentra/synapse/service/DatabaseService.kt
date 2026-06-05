@@ -1,6 +1,6 @@
 package cloud.mallne.dicentra.synapse.service
 
-import cloud.mallne.dicentra.synapse.model.Configuration
+import cloud.mallne.dicentra.synapse.model.SynapseConfig
 import io.r2dbc.spi.ConnectionFactoryOptions
 import org.jetbrains.exposed.v1.core.Schema
 import org.jetbrains.exposed.v1.core.StdOutSqlLogger
@@ -12,7 +12,7 @@ import org.koin.core.annotation.Factory
 import org.koin.core.annotation.Provided
 
 @Factory
-class DatabaseService(@Provided config: Configuration) {
+class DatabaseService(@Provided config: SynapseConfig) {
     val scm = Schema(config.data.schema)
     val dataConfig = config.data
 

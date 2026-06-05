@@ -1,7 +1,7 @@
 package cloud.mallne.dicentra.synapse.model.dto
 
 import cloud.mallne.dicentra.aviator.model.AviatorServiceUtils
-import cloud.mallne.dicentra.synapse.model.Configuration
+import cloud.mallne.dicentra.synapse.model.SynapseConfig
 import cloud.mallne.dicentra.synapse.model.dto.ServiceBundle.Companion.buildBundles
 import cloud.mallne.dicentra.synapse.service.CatalystGenerator
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionGroupRule
@@ -30,7 +30,7 @@ data class APIServiceDTO @OptIn(ExperimentalUuidApi::class, ExperimentalTime::cl
     val preferredTransform: ServiceDefinitionTransformationType = ServiceDefinitionTransformationType.Auto,
 ) {
     fun transformOrNull(
-        configuration: Configuration,
+        configuration: SynapseConfig,
         requested: ServiceDefinitionTransformationType = ServiceDefinitionTransformationType.Auto,
     ): ServiceDefinitionTransformationType? {
         return if (requested.canUse(configuration, preferredTransform, nativeTransformable, catalystTransformable)) {
@@ -52,7 +52,7 @@ data class APIServiceDTO @OptIn(ExperimentalUuidApi::class, ExperimentalTime::cl
 
     companion object {
         fun List<APIServiceDTO>.transformGroups(
-            configuration: Configuration,
+            configuration: SynapseConfig,
             requestedTransformationType: ServiceDefinitionTransformationType = ServiceDefinitionTransformationType.Auto,
             requestedRule: ServiceDefinitionGroupRule? = null,
         ): List<ServiceBundle> {

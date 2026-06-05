@@ -67,6 +67,5 @@ dependencies {
 
 koinCompiler {
     userLogs = true
-    compileSafety =
-        false //the configuration gets injected with the application as a non Koin param https://github.com/InsertKoinIO/koin-compiler-plugin/issues/7
+    compileSafety = true //the configuration gets injected with the application as a non Koin param https://github.com/InsertKoinIO/koin-compiler-plugin/issues/7
 }
