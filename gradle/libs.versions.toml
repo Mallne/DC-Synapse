@@ -1,6 +1,6 @@
 [versions]
 # @pin
-agp = "9.0.1"
+agp = "9.2.1"
 # @keep
 android-compileSdk = "36"
 # @keep
@@ -16,11 +16,11 @@ koin = "4.2.2"
 koin-plugin = "1.0.1"
 kotlin = "2.4.0"
 kotlinx-datetime = "0.8.0"
-ksp = "2.3.7"
+ksp = "2.3.9"
 ktor = "3.5.1"
 logback-version = "1.5.37"
 mcp = "0.14.0"
-postgres = "1.1.1.RELEASE"
+postgres = "1.1.2.RELEASE"
 postgres-jdbc = "42.7.12"
 serialization = "1.11.0"
 version-catalog-update-v = "1.1.0"
