@@ -3,6 +3,7 @@ package cloud.mallne.dicentra.synapse
 import cloud.mallne.dicentra.synapse.config.configureFrameworks
 import cloud.mallne.dicentra.synapse.config.configureHTTP
 import cloud.mallne.dicentra.synapse.config.configureSecurity
+import cloud.mallne.dicentra.synapse.config.configureTelemetry
 import cloud.mallne.dicentra.synapse.config.routes
 import io.ktor.server.application.*
 import io.ktor.server.netty.EngineMain
@@ -18,4 +19,5 @@ fun Application.module() {
     configureSecurity()
     configureHTTP()
     routes()
+    configureTelemetry("synapse")
 }

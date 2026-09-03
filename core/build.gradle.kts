@@ -10,6 +10,10 @@ plugins {
 group = "cloud.mallne.dicentra.synapse"
 version = "0.0.1"
 
+kotlin {
+    jvmToolchain(25)
+}
+
 application {
     mainClass = "io.ktor.server.netty.EngineMain"
 }
@@ -53,6 +57,11 @@ dependencies {
     api(libs.mcp)
     api(libs.logback.classic)
     api(libs.kotlinx.datetime)
+    //OpenTelemetry
+    api(libs.opentelemetry.ktor)
+    api(libs.opentelemetry.kotlin)
+    api(libs.opentelemetry.logback)
+    api(libs.opentelemetry.autoconfigure)
     //aviator
     api(libs.dc.aviator.client.ktor)
     api(libs.dc.aviator.client.mock)
