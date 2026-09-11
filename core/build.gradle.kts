@@ -62,6 +62,7 @@ dependencies {
     api(libs.opentelemetry.kotlin)
     api(libs.opentelemetry.logback)
     api(libs.opentelemetry.autoconfigure)
+    implementation(libs.opentelemetry.kotlin.core)
     //aviator
     api(libs.dc.aviator.client.ktor)
     api(libs.dc.aviator.client.mock)
@@ -70,6 +71,7 @@ dependencies {
     api(libs.dc.aviator.plugin.interception)
     api(libs.dc.aviator.plugin.weaver)
     api(libs.dc.aviator.plugin.synapse)
+    api(libs.dc.aviator.plugin.otel)
     api(libs.dc.polyfill)
 }
 
