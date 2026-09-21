@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.kjvm)
     alias(libs.plugins.android.library) apply false
+    alias(libs.plugins.mavenPublish)
     alias(libs.plugins.ktor)
     alias(libs.plugins.ksp)
     alias(libs.plugins.kotlin.serialization)
@@ -8,7 +9,7 @@ plugins {
 }
 
 group = "cloud.mallne.dicentra.synapse"
-version = "0.0.1"
+version = project.findProperty("VERSION_NAME") ?: "0.1.0-SNAPSHOT"
 
 kotlin {
     jvmToolchain(25)
@@ -79,4 +80,31 @@ dependencies {
 koinCompiler {
     userLogs = true
     compileSafety = true //the configuration gets injected with the application as a non Koin param https://github.com/InsertKoinIO/koin-compiler-plugin/issues/7
+}
+
+mavenPublishing {
+    publishing {
+        repositories {
+            maven {
+                name = "DiCentraArtefacts"
+                url = uri("https://registry.mallne.cloud/repository/DiCentraArtefacts/")
+                credentials {
+                    username = providers.environmentVariable("NEXUS_USERNAME").getOrElse("")
+                    password = providers.environmentVariable("NEXUS_PASSWORD").getOrElse("")
+                }
+            }
+        }
+    }
+
+    coordinates(group.toString(), project.name)
+    pom {
+        name = "DiCentra Synapse Core"
+        inceptionYear = "2025"
+        developers {
+            developer {
+                name = "Mallne"
+                url = "mallne.cloud"
+            }
+        }
+    }
 }
