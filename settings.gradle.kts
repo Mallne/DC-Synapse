@@ -10,6 +10,13 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven {
+            url = uri("https://registry.mallne.cloud/repository/DiCentraArtefacts/")
+            credentials {
+                username = System.getenv("NEXUS_USERNAME") ?: ""
+                password = System.getenv("NEXUS_PASSWORD") ?: ""
+            }
+        }
     }
 }
 
