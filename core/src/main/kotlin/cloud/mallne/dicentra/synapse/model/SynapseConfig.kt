@@ -81,12 +81,20 @@ data class Catalyst(
 )
 
 @Serializable
+data class Telemetry(
+    val endpoint: String = "",
+    @SerialName("service_name")
+    val serviceName: String = "synapse",
+)
+
+@Serializable
 data class SynapseConfig(
     val security: Security,
     val data: Database,
     val server: Server,
     val catalyst: Catalyst,
-    val preferredTransform: ServiceDefinitionTransformationType = ServiceDefinitionTransformationType.Native
+    val preferredTransform: ServiceDefinitionTransformationType = ServiceDefinitionTransformationType.Native,
+    val telemetry: Telemetry = Telemetry(),
 ) {
     init {
         require(preferredTransform != ServiceDefinitionTransformationType.Auto) { "Auto is not an allowed preferred transform" }

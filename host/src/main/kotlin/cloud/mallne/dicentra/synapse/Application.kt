@@ -19,5 +19,5 @@ fun Application.module() {
     configureSecurity()
     configureHTTP()
     routes()
-    configureTelemetry("synapse")
+    configureTelemetry()
 }
