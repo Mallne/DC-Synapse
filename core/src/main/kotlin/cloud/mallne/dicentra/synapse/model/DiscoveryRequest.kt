@@ -12,7 +12,7 @@ import kotlin.uuid.Uuid
 
 @Serializable
 @ResponseObject
-data class DiscoveryRequest @OptIn(ExperimentalUuidApi::class) constructor(
+data class DiscoveryRequest(
     val id: String = Uuid.random().toString(),
     val forScope: String? = null,
     val service: OpenApiDoc,
