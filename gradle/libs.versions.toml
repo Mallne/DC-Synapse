@@ -6,7 +6,7 @@ android-compileSdk = "36"
 # @keep
 android-minSdk = "24"
 ben-manes-versions-v = "0.64.0"
-dc-aviator = "1.0.0"
+dc-aviator = "1.0.3"
 dc-polyfill = "1.0.1"
 dc-weaver = "1.0.0"
 dependency-analysis-v = "3.19.2"
