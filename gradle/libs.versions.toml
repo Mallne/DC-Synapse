@@ -21,6 +21,7 @@ ktor = "3.6.0"
 logback-version = "1.6.5"
 mcp = "0.15.0"
 opentelemetry = "1.66.0"
+opentelemetry-api-incubator = "1.66.0-alpha"
 opentelemetry-instrumentation = "2.26.1-alpha"
 opentelemetry-kotlin = "0.8.0"
 postgres = "1.1.3.RELEASE"
@@ -81,6 +82,7 @@ opentelemetry-kotlin-core = { module = "io.opentelemetry.kotlin:core", version.r
 opentelemetry-kotlin-compat = { module = "io.opentelemetry.kotlin:compat", version.ref = "opentelemetry-kotlin" }
 opentelemetry-logback = { module = "io.opentelemetry.instrumentation:opentelemetry-logback-appender-1.0", version.ref = "opentelemetry-instrumentation" }
 opentelemetry-autoconfigure = { module = "io.opentelemetry:opentelemetry-sdk-extension-autoconfigure", version.ref = "opentelemetry" }
+opentelemetry-api-incubator = { module = "io.opentelemetry:opentelemetry-api-incubator", version.ref = "opentelemetry-api-incubator" }
 opentelemetry-exporter-otlp = { module = "io.opentelemetry:opentelemetry-exporter-otlp", version.ref = "opentelemetry" }
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
