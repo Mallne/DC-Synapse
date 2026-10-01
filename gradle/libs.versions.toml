@@ -81,6 +81,7 @@ opentelemetry-kotlin-core = { module = "io.opentelemetry.kotlin:core", version.r
 opentelemetry-kotlin-compat = { module = "io.opentelemetry.kotlin:compat", version.ref = "opentelemetry-kotlin" }
 opentelemetry-logback = { module = "io.opentelemetry.instrumentation:opentelemetry-logback-appender-1.0", version.ref = "opentelemetry-instrumentation" }
 opentelemetry-autoconfigure = { module = "io.opentelemetry:opentelemetry-sdk-extension-autoconfigure", version.ref = "opentelemetry" }
+opentelemetry-exporter-otlp = { module = "io.opentelemetry:opentelemetry-exporter-otlp", version.ref = "opentelemetry" }
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback-version" }

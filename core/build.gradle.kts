@@ -63,6 +63,7 @@ dependencies {
     api(libs.opentelemetry.kotlin)
     api(libs.opentelemetry.logback)
     api(libs.opentelemetry.autoconfigure)
+    runtimeOnly(libs.opentelemetry.exporter.otlp)
     implementation(libs.opentelemetry.kotlin.core)
     //aviator
     api(libs.dc.aviator.client.ktor)
