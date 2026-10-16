@@ -35,6 +35,7 @@ dependencies {
     api(libs.ktor.client.core)
     api(libs.ktor.client.content.negotiation)
     api(libs.ktor.client.apache)
+    implementation(libs.ktor.client.apache5)
     api(libs.ktor.client.auth)
     api(libs.ktor.server.forwarded.header)
     api(libs.ktor.server.cors)
@@ -76,6 +77,10 @@ dependencies {
     api(libs.dc.aviator.plugin.synapse)
     api(libs.dc.aviator.plugin.otel)
     api(libs.dc.polyfill)
+
+    testImplementation(kotlin("test"))
+    testImplementation(libs.ktor.server.test.host)
+    testImplementation(libs.ktor.client.mock)
 }
 
 

@@ -18,6 +18,7 @@ Read these root `.ai/` articles first:
 | [architecture.md](architecture.md) | Module structure, endpoints, data flow |
 | [business-rules.md](business-rules.md) | Service discovery rules, scoping, Catalyst |
 | [commands.md](commands.md) | Scripts, env vars, local dev setup |
+| [plans/CATALYST-IMPLEMENTATION-PLAN.md](plans/CATALYST-IMPLEMENTATION-PLAN.md) | AA-114 Catalyst execution-gateway plan, current implementation/test evidence, remaining acceptance gaps, and separate MCP milestone |
 
 ## Published Documentation
 

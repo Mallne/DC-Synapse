@@ -17,6 +17,8 @@ data class IntrospectionResponse(
     val emailVerified: Boolean = false,
     val name: String,
     val groups: List<String> = listOf(),
+    @SerialName("realm_access")
+    val realmAccess: RealmAccess = RealmAccess(),
     @SerialName("preferred_username")
     val preferredUsername: String,
     val active: Boolean = false,
@@ -31,11 +33,21 @@ data class IntrospectionResponse(
     val clientId: String,
 ) {
     fun toUser(config: Security): User {
+        val memberships = groups + realmAccess.roles
+        fun hasMembership(configured: String) = memberships.any {
+            it.trim().trimStart('/') == configured.trim().trimStart('/')
+        }
+
         val acl = User.AccessLevels(
-            user = groups.contains(config.groups.user),
-            superAdmin = groups.contains(config.groups.superadmin)
+            user = hasMembership(config.groups.user),
+            superAdmin = hasMembership(config.groups.superadmin)
         )
         val locked = config.enabled && !active && !emailVerified
         return User(name, email, preferredUsername, locked, acl)
     }
 }
+
+@Serializable
+data class RealmAccess(
+    val roles: List<String> = emptyList(),
+)

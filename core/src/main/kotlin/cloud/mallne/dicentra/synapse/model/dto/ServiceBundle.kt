@@ -23,7 +23,6 @@ data class ServiceBundle(
             val catalystRoutes = catalystTransforms.map {
                 generator.generateFor(
                     it.route,
-                    if (it.groupRule == ServiceDefinitionGroupRule.Single) it.service.id else null
                 )
             }
             val catalystEndpoint = generator.generateWrapper(catalystRoutes)

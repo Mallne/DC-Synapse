@@ -37,8 +37,11 @@ synapse/
 - `DELETE /services/{id}` -- Unregister a service
 
 ### Catalyst (`/catalyst`)
-- `GET /catalyst` -- Returns transformed OpenAPI specs for registered services
-- Note: Route is defined but currently **not wired** in `config/Routes.kt`
+- Generated execution action: `POST /catalyst/{selector}`. The URL-safe selector identifies a `ServiceLocator` (locator plus flavour); discovery remains on `/services`.
+- The route authorizes visible source actions, binds the JSON envelope against the original Aviator route input schema, and executes through the Aviator pipeline. It does not make provider calls outside Aviator.
+- Request bytes, each provider response, aggregate response bytes, fanout target count/concurrency, and deadlines are bounded by Catalyst configuration. Provider destinations must use HTTPS and match an exact configured host/IP allowlist entry.
+- Typed input binding handles supported required/missing/null/cardinality/constraint/body and path-level inputs; unsupported schemas/codecs fail closed. This is not full schema-fidelity acceptance.
+- AreaAssist supplies ESRI/WFS plugin contributions through Koin at its composition root; generic Synapse does not depend on AreaAssist models. Composition/parity test presence is not evidence those tests passed.
 
 ### Multi-tenancy (`/scope`)
 - Scope-based access control for services and users

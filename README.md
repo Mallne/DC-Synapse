@@ -18,18 +18,17 @@ oo     .d8P    `888'     888   888  d8(  888   888   888 o.  )88b 888    .o
 A part of DiCentra by Mallne
 ```
 
-**Synapse** is the core service discovery and "Catalyst" (service mesh/gateway) layer of the **DiCentra Application
-Framework**. It provides a centralized registry for services and a dynamic gateway for routing, aggregation, and
-AI-driven interactions.
+**Synapse** is the core service discovery and Catalyst execution gateway of the **DiCentra Application Framework**.
+It provides a centralized registry for Aviator-compatible services and an authorized HTTP gateway that executes
+registered actions through Aviator.
 
 ---
 
 ## 🚀 Key Features
 
 - **🔍 Service Discovery**: A robust registry for public and multi-tenant (scoped) services.
-- **⚡ Catalyst Gateway**: High-performance service mesh that handles dynamic routing and request tailoring.
-- **🤖 MCP Server**: Built-in support for the [Model Context Protocol](https://modelcontextprotocol.io/), enabling LLM
-  agents to interact directly with your service ecosystem.
+- **⚡ Catalyst Gateway**: Locator-based execution through the original Aviator provider pipeline.
+- **🤖 MCP Server**: Planned separately; no MCP endpoint is currently provided by this HTTP milestone.
 - **🔐 Secure by Design**: Integrated OIDC/JWT authentication with fine-grained scope-based access control.
 - **🔗 Monorepo Ready**: Seamlessly integrates with [Aviator](https://github.com/mallne/DC-Aviator)
   and [Polyfill](https://github.com/mallne/DC-Polyfill).
@@ -60,7 +59,7 @@ Synapse is built with a modular approach:
 
 ### Prerequisites
 
-- JDK 17+
+- JDK 25 (monorepo Gradle toolchain; select it through `mise`)
 - Docker (for database)
 
 ### Setup
@@ -81,12 +80,20 @@ Synapse is built with a modular approach:
 
 ## 📖 API Overview
 
-### Catalyst Endpoints
+### Catalyst Endpoint
 
-- `GET /catalyst`: List all registered Service Locators.
-- `POST /catalyst/aggregate/{locator}`: Aggregate requests across multiple services.
-- `POST /catalyst/request/{id}`: Send a tailored request to a specific service.
-- `GET /catalyst/mcp`: The Model Context Protocol (MCP) server endpoint for AI agents.
+- `POST /catalyst/{selector}` executes the caller-visible original actions matching a canonical URL-safe Base64
+  `ServiceLocator.toString()` selector. The JSON body is the version-1 `CatalystRequest` envelope; optional
+  `identities` contains visible service-record IDs and overrides automatic filters. List results are flattened into
+  a JSON array ordered by service ID. Any partial provider failure returns `502`; invalid input returns `400`.
+- Discovery remains `GET /services`; there is no `GET /catalyst` locator-list endpoint.
+
+Catalyst is fail-closed for outbound execution. Configure `CATALYST_ALLOWED_HOSTS` as a comma-separated list of exact
+provider hostnames or IP addresses. Provider server URLs must use HTTPS on the standard port and must match an entry;
+automatic HTTP redirects are disabled. Configure limits with `catalyst.max_targets`,
+`catalyst.max_concurrent_targets`, `catalyst.max_request_bytes`, `catalyst.max_response_bytes`,
+`catalyst.max_aggregate_response_bytes`, `catalyst.per_target_timeout_millis`, and
+`catalyst.overall_timeout_millis` (environment-variable equivalents use the `CATALYST_` prefix).
 
 ### Discovery Endpoints
 

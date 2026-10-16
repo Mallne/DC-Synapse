@@ -21,6 +21,9 @@ Rules an agent must respect when writing code for this module.
 
 - **Rule**: Catalyst generators must inject `SynapsePlugin` (`aviator.plugin.synapse`) into Aviator plugin materialization.
 - **Why**: The plugin bridges Synapse's service registry with Aviator's execution pipeline.
+- **Rule**: Execution uses generated `POST /catalyst/{selector}` actions. Bind inputs against the original action schema; enforce required/missing/null rules, cardinality, supported constraints, body shape, and path-level parameters. Reject unsupported schemas/codecs rather than silently coercing or dropping values.
+- **Rule**: Configure request, provider-response, aggregate-response, fanout, and deadline bounds. Provider destinations must be HTTPS, credential-free, standard port, and an exact configured host/IP allowlist match.
+- **Why**: Schema binding preserves the declared action contract; explicit resource and destination bounds constrain gateway execution. These controls do not by themselves prove full OpenAPI fidelity, DNS/redirect safety, or end-to-end acceptance.
 
 ## Database Migrations
 
@@ -29,7 +32,7 @@ Rules an agent must respect when writing code for this module.
 
 ## Edge Cases
 
-- **Catalyst route not wired**: The `/catalyst` route is defined but not currently registered in `Routes.kt`. Do not assume it is active.
+- **Catalyst acceptance**: Presence of composition/parity tests does not establish that they passed. Do not claim complete acceptance without recorded execution, and keep broader schema fidelity, redirect/DNS/private-network policy, transaction/cache lifecycle, client automation, and MCP gaps explicit.
 - **Composite builds**: Synapse can use sibling project dependencies via `includeBuild` when inside the monorepo.
 
 ## Overrides
