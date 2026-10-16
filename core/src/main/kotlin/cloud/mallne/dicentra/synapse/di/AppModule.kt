@@ -3,6 +3,7 @@ package cloud.mallne.dicentra.synapse.di
 import cloud.mallne.dicentra.synapse.service.APIDBService
 import cloud.mallne.dicentra.synapse.service.CatalystGenerator
 import cloud.mallne.dicentra.synapse.service.CatalystExecutor
+import cloud.mallne.dicentra.synapse.service.CatalystActionResolver
 import cloud.mallne.dicentra.synapse.service.DatabaseService
 import cloud.mallne.dicentra.synapse.service.DiscoveryGenerator
 import cloud.mallne.dicentra.synapse.service.ScopeService
@@ -29,6 +30,7 @@ class AppModule
 
 val DI = module {
     singleOf(::APIDBService)
+    singleOf(::CatalystActionResolver)
     singleOf(::CatalystGenerator)
     factoryOf(::DatabaseService)
     singleOf(::DiscoveryGenerator)

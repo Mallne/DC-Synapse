@@ -48,10 +48,16 @@ internal object CatalystInputBinder {
         return RawRequestBody(bytes, format.contentType)
     }
 
-    fun bind(request: CatalystRequest, route: Route, json: Json, codecs: CatalystParameterCodecs): RequestParameters {
+    fun bind(
+        request: CatalystRequest,
+        route: Route,
+        json: Json,
+        codecs: CatalystParameterCodecs,
+        pluginContracts: Map<String, CatalystParameterContract> = emptyMap(),
+    ): RequestParameters {
         require(request.version == 1) { "Unsupported Catalyst request version '${request.version}'" }
         val inputs = route.input.associateBy { it.name }
-        val undeclaredInputs = request.typedParameters.keys - inputs.keys
+        val undeclaredInputs = request.typedParameters.keys - inputs.keys - pluginContracts.keys
         require(undeclaredInputs.isEmpty()) {
             "Catalyst request contains inputs not declared by the action: ${undeclaredInputs.sorted().joinToString()}"
         }
@@ -61,7 +67,25 @@ internal object CatalystInputBinder {
 
         val parameters = mutableMapOf<String, RequestParameter>()
         request.typedParameters.forEach { (name, transport) ->
-            val input = requireNotNull(inputs[name])
+            val input = inputs[name]
+            if (input == null) {
+                val contract = requireNotNull(pluginContracts[name])
+                require(transport.cardinality == contract.cardinality) {
+                    "Catalyst plugin input cardinality does not match its declared contract"
+                }
+                require(transport.codec == contract.codec) {
+                    "Catalyst plugin input serializer does not match its declared contract"
+                }
+                if (transport.cardinality == CatalystParameterValue.Cardinality.SINGLE) {
+                    require(transport.values.size == 1) { "Single-valued Catalyst input must contain exactly one value" }
+                }
+                val values = transport.values.map { codecs.decode(contract.codec, json, it) }
+                parameters[name] = when (transport.cardinality) {
+                    CatalystParameterValue.Cardinality.SINGLE -> RequestParameter.Single(values.single())
+                    CatalystParameterValue.Cardinality.MULTI -> RequestParameter.Multi(values)
+                }
+                return@forEach
+            }
             require(transport.values.isNotEmpty() || transport.cardinality == CatalystParameterValue.Cardinality.MULTI) {
                 "Single-valued Catalyst input must contain one value"
             }

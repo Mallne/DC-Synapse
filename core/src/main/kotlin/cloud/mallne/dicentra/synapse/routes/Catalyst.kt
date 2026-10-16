@@ -25,6 +25,7 @@ import io.ktor.server.auth.*
 import io.ktor.server.response.*
 import io.ktor.server.request.*
 import io.ktor.server.routing.*
+import io.ktor.server.routing.openapi.*
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.plugins.BadRequestException
 import kotlinx.coroutines.CancellationException
@@ -131,5 +132,8 @@ internal fun Route.catalystEndpoint(
         } catch (_: Exception) {
             call.respond(HttpStatusCode.InternalServerError, JsonObject(mapOf("error" to JsonPrimitive("Action execution failed"))))
         }
+    }.describe {
+        summary = "Execute a Catalyst action"
+        operationId = "CatalystExecute"
     }
 }

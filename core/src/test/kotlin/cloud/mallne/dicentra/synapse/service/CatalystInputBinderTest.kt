@@ -140,6 +140,53 @@ class CatalystInputBinderTest {
     }
 
     @Test
+    fun `binds provider plugin inputs absent from upstream OpenAPI under explicit contract`() {
+        val contract = CatalystParameterContract(
+            name = "pluginFlag",
+            cardinality = CatalystParameterValue.Cardinality.SINGLE,
+            serializer = Boolean.serializer(),
+        )
+        val request = CatalystRequest(
+            typedParameters = mapOf(
+                "pluginFlag" to CatalystParameterValue(
+                    CatalystParameterValue.Cardinality.SINGLE,
+                    listOf(JsonPrimitive(true)),
+                    Boolean.serializer().descriptor.serialName,
+                ),
+            ),
+        )
+        val targetRoute = route(input("ordinary", Model.Primitive.String(null, null, null))).copy(input = emptyList())
+
+        val parameters = CatalystInputBinder.bind(
+            request,
+            targetRoute,
+            json,
+            codecs,
+            mapOf(contract.name to contract),
+        )
+
+        assertEquals(true, (parameters.getValue("pluginFlag") as cloud.mallne.dicentra.aviator.core.execution.RequestParameter.Single<*>).value)
+        assertFailsWith<IllegalArgumentException> {
+            CatalystInputBinder.bind(
+                request.copy(typedParameters = request.typedParameters + ("unregistered" to request.typedParameters.getValue("pluginFlag"))),
+                targetRoute,
+                json,
+                codecs,
+                mapOf(contract.name to contract),
+            )
+        }
+        assertFailsWith<IllegalArgumentException> {
+            CatalystInputBinder.bind(
+                request.copy(typedParameters = request.typedParameters.mapValues { (_, value) -> value.copy(codec = String.serializer().descriptor.serialName) }),
+                targetRoute,
+                json,
+                codecs,
+                mapOf(contract.name to contract),
+            )
+        }
+    }
+
+    @Test
     fun `path item parameter declarations are represented in route input metadata`() {
         val locator = ServiceLocator("path-level-input", ServiceMethods.GATHER)
         val operation = Operation.build {

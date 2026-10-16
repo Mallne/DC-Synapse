@@ -320,6 +320,45 @@ class CatalystExecutorIntegrationTest {
         }
     }
 
+    @Test
+    fun `executor binds declared provider plugin inputs absent from OpenAPI parameters`(): Unit = runBlocking {
+        val contract = CatalystParameterContract(
+            name = "pluginFlag",
+            cardinality = CatalystParameterValue.Cardinality.SINGLE,
+            serializer = Boolean.serializer(),
+        )
+        val contribution = object : CatalystPluginContribution {
+            override val identity = JsonAdapter.identity
+            override val parameterCodecs = listOf(Boolean.serializer())
+            override val parameterContracts = listOf(contract)
+            override fun create() = JsonAdapter.install { }
+        }
+        val client = HttpClient(MockEngine {
+            respond("{\"ok\":true}", headers = headersOf(HttpHeaders.ContentType, "application/json"))
+        })
+        val executor = CatalystExecutor(
+            listOf(contribution),
+            client = client,
+            allowedHosts = listOf("provider-a.example"),
+            resolveProviderHost = ::publicTestResolution,
+        )
+        try {
+            val request = CatalystRequest(
+                typedParameters = mapOf(
+                    contract.name to CatalystParameterValue(
+                        contract.cardinality,
+                        listOf(JsonPrimitive(true)),
+                        contract.codec,
+                    ),
+                ),
+            )
+
+            assertEquals("[{\"ok\":true}]", executor.execute(listOf(action("a", "provider-a.example")), request).toString())
+        } finally {
+            executor.close()
+        }
+    }
+
     private fun action(id: String, host: String, includeXml: Boolean = false): ResolvedCatalystAction {
         val materializations = buildMap {
             put(JsonAdapter.identity, kotlinx.serialization.json.JsonObject(emptyMap()))

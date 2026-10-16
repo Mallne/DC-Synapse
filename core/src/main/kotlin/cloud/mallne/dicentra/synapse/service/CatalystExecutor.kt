@@ -71,9 +71,18 @@ class CatalystExecutor(
             require(actions.map { it.route.body }.distinct().size == 1) {
                 "Selected actions do not share a body contract"
             }
+            val pluginContractsByAction = actions.map(::parameterContractsFor)
+            val pluginContracts = pluginContractsByAction.firstOrNull().orEmpty()
+            require(pluginContractsByAction.all { contracts ->
+                contracts.keys == pluginContracts.keys && contracts.all { (name, contract) ->
+                    pluginContracts[name]?.let { it.codec == contract.codec && it.cardinality == contract.cardinality } == true
+                }
+            }) { "Selected actions do not share a plugin input contract" }
             serializedBody = CatalystInputBinder.serializedBody(request, actions.first().route)
-            if (serializedBody == null) CatalystInputBinder.validateBody(request.body, actions.first().route, json)
-            CatalystInputBinder.bind(request, actions.first().route, json, codecRegistry)
+            if (serializedBody == null && !(request.body == null && requestBodyIsConstructedByPlugin(actions.first()))) {
+                CatalystInputBinder.validateBody(request.body, actions.first().route, json)
+            }
+            CatalystInputBinder.bind(request, actions.first().route, json, codecRegistry, pluginContracts)
         } catch (cause: IllegalArgumentException) {
             throw CatalystInvalidRequestException(cause)
         }
@@ -82,6 +91,22 @@ class CatalystExecutor(
         return fanout.execute(selected.sortedBy { it.service.id }) { action ->
             executeOne(action, request, parameters, serializedBody)
         }
+    }
+
+    private fun requestBodyIsConstructedByPlugin(action: ResolvedCatalystAction): Boolean {
+        val materializedIdentities = action.route.`x-dicentra-aviator-pluginMaterialization`.orEmpty().keys
+        return contributions.any { it.identity in materializedIdentities && it.handlesRequestBody }
+    }
+
+    private fun parameterContractsFor(action: ResolvedCatalystAction): Map<String, CatalystParameterContract> {
+        val identities = action.route.`x-dicentra-aviator-pluginMaterialization`.orEmpty().keys
+        val contracts = identities.flatMap { identity ->
+            providersByIdentity[identity]?.singleOrNull()?.parameterContracts.orEmpty()
+        }
+        require(contracts.map { it.name }.distinct().size == contracts.size) {
+            "Catalyst provider contributions declare duplicate input names"
+        }
+        return contracts.associateBy { it.name }
     }
 
     internal fun selectActions(
@@ -126,7 +151,8 @@ class CatalystExecutor(
             throw CatalystOutboundPolicyException(cause)
         }
         val materialized = action.route.`x-dicentra-aviator-pluginMaterialization` ?: emptyMap()
-        val selected = materialized.keys.map { identity ->
+        val selectedIdentities = materialized.keys + contributions.filter { it.activateByDefault }.map { it.identity }
+        val selected = selectedIdentities.distinct().map { identity ->
             val provider = providersByIdentity[identity]?.singleOrNull()
                 ?: throw MissingCatalystPluginException()
             provider.create().also { instance ->
