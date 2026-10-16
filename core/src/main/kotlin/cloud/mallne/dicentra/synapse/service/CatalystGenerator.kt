@@ -79,7 +79,12 @@ class CatalystGenerator(
             }.copy(
                 requestBody = Value(
                     RequestBody(
-                        description = "Agnostic request parameters and body forwarded to the original Aviator action.",
+                        description = "JSON envelope: body carries the original JSON value by default. For serialized " +
+                            "bodies, set bodyFormat to {\"type\":\"base64\",\"contentType\":\"application/xml\"} " +
+                            "and body to a JSON string containing canonical standard padded base64 of the exact bytes. " +
+                            "Only application/xml or text/xml declared by the original action is currently supported. " +
+                            "XML is never parsed or reserialized. The entire encoded envelope " +
+                            "counts toward the request byte limit.",
                         required = true,
                         content = mapOf(
                             ContentType.Application.Json to MediaType(

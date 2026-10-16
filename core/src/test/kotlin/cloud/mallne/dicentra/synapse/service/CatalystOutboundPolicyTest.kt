@@ -6,6 +6,32 @@ import kotlin.test.assertFailsWith
 
 class CatalystOutboundPolicyTest {
     @Test
+    fun `Thuringen WFS requires deployment opt-in for its exact host`() {
+        val host = "www.geoproxy.geoportal-th.de"
+        val url = "https://$host/geoproxy/services/adv_alkis_wfs"
+        assertFailsWith<IllegalArgumentException> { publicHostPolicy(host, emptyList()).validate(listOf(url)) }
+        val policy = publicHostPolicy(host)
+        policy.validate(listOf(url))
+        for (other in listOf("geoproxy.geoportal-th.de", "$host.evil.example", "sub.$host")) {
+            assertFailsWith<IllegalArgumentException> { policy.validate(listOf("https://$other/geoproxy/services/adv_alkis_wfs")) }
+        }
+    }
+
+    @Test
+    fun `public registry hosts can be enabled without wildcard allowlisting`() {
+        val host = "www.geoproxy.geoportal-th.de"
+        val policy = publicHostPolicy(host, emptyList())
+        assertFailsWith<IllegalArgumentException> {
+            policy.validate(listOf("https://$host/geoproxy/services/adv_alkis_wfs"))
+        }
+        policy.validate(listOf("https://$host/geoproxy/services/adv_alkis_wfs"), allowServiceDefinitionHosts = true)
+        policy.resolvePublicHost(host)
+        assertFailsWith<IllegalArgumentException> {
+            policy.validate(listOf("http://other.example/provider"), allowServiceDefinitionHosts = true)
+        }
+    }
+
+    @Test
     fun `requires exact allowlisted host and HTTPS`() {
         val policy = publicHostPolicy("provider.example")
         policy.validate(listOf("https://provider.example/api"))

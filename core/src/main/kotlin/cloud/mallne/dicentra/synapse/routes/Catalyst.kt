@@ -83,7 +83,7 @@ internal fun Route.catalystEndpoint(
         }
         val request = try {
             if (!call.request.contentType().match(io.ktor.http.ContentType.Application.Json)) {
-                call.respond(HttpStatusCode.UnsupportedMediaType)
+                call.respond(HttpStatusCode.UnsupportedMediaType, JsonObject(mapOf("error" to JsonPrimitive("Catalyst requires an application/json envelope"))))
                 return@post
             }
             val declaredLength = call.request.headers[io.ktor.http.HttpHeaders.ContentLength]?.toLongOrNull()
@@ -100,10 +100,10 @@ internal fun Route.catalystEndpoint(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: BadRequestException) {
-            call.respond(HttpStatusCode.BadRequest)
+            call.respond(HttpStatusCode.BadRequest, JsonObject(mapOf("error" to JsonPrimitive("Malformed Catalyst JSON envelope"))))
             return@post
         } catch (_: Exception) {
-            call.respond(HttpStatusCode.BadRequest)
+            call.respond(HttpStatusCode.BadRequest, JsonObject(mapOf("error" to JsonPrimitive("Malformed Catalyst JSON envelope"))))
             return@post
         }
         try {
@@ -113,7 +113,7 @@ internal fun Route.catalystEndpoint(
         } catch (_: CatalystUpstreamFailureException) {
             call.respond(HttpStatusCode.BadGateway, JsonObject(mapOf("error" to JsonPrimitive("Upstream execution failed"))))
         } catch (_: CatalystInvalidRequestException) {
-            call.respond(HttpStatusCode.BadRequest)
+            call.respond(HttpStatusCode.BadRequest, JsonObject(mapOf("error" to JsonPrimitive("Invalid action inputs or body envelope; check declared media type and base64 XML data"))))
         } catch (_: CatalystPartialExecutionException) {
             call.respond(HttpStatusCode.BadGateway, JsonObject(mapOf("error" to JsonPrimitive("One or more upstream executions failed"))))
         } catch (_: CatalystExecutionTimeoutException) {

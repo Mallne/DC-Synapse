@@ -8,6 +8,10 @@ import cloud.mallne.dicentra.aviator.koas.typed.Route
 import cloud.mallne.dicentra.aviator.plugin.synapse.CatalystParameterCodecs
 import cloud.mallne.dicentra.aviator.plugin.synapse.CatalystParameterValue
 import cloud.mallne.dicentra.aviator.plugin.synapse.CatalystRequest
+import cloud.mallne.dicentra.aviator.plugin.synapse.CatalystBodyFormat
+import cloud.mallne.dicentra.aviator.core.io.RawRequestBody
+import io.ktor.http.ContentType
+import kotlin.io.encoding.Base64
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -19,6 +23,31 @@ import kotlinx.serialization.json.decodeFromJsonElement
 
 /** Validates Catalyst values against the original action's declared inputs before Aviator runs. */
 internal object CatalystInputBinder {
+    fun serializedBody(request: CatalystRequest, route: Route): RawRequestBody? {
+        val format = request.bodyFormat as? CatalystBodyFormat.Base64 ?: return null
+        require(format.contentType.none { it.code < 32 || it.code == 127 }) { "Invalid body content type" }
+        val contentType = try {
+            ContentType.parse(format.contentType)
+        } catch (cause: io.ktor.http.BadContentTypeFormatException) {
+            throw IllegalArgumentException("Invalid body content type", cause)
+        }
+        require(contentType.withoutParameters() in listOf(ContentType.Application.Xml, ContentType.Text.Xml)) {
+            "Serialized body contentType must be application/xml or text/xml"
+        }
+        require(route.body.types.keys.any { it.withoutParameters() == contentType.withoutParameters() }) {
+            "The original action does not declare the XML media type"
+        }
+        val body = request.body as? JsonPrimitive ?: throw IllegalArgumentException("A base64 body must be a JSON string")
+        require(body.isString) { "A base64 body must be a JSON string" }
+        val base64 = body.content
+        require(base64.length % 4 == 0 && base64.matches(Regex("[A-Za-z0-9+/]*={0,2}"))) {
+            "Serialized body must contain standard padded base64"
+        }
+        val bytes = Base64.Default.decode(base64)
+        require(bytes.isNotEmpty() && Base64.Default.encode(bytes) == base64) { "Serialized body base64 is empty or non-canonical" }
+        return RawRequestBody(bytes, format.contentType)
+    }
+
     fun bind(request: CatalystRequest, route: Route, json: Json, codecs: CatalystParameterCodecs): RequestParameters {
         require(request.version == 1) { "Unsupported Catalyst request version '${request.version}'" }
         val inputs = route.input.associateBy { it.name }

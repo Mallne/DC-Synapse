@@ -48,6 +48,7 @@ val DI = module {
             maxResponseBytes = limits.maxResponseBytes,
             maxAggregateResponseBytes = limits.maxAggregateResponseBytes,
             allowedHosts = limits.allowedHosts.split(',').map(String::trim).filter(String::isNotEmpty),
+            allowPublicServiceHosts = limits.allowPublicServiceHosts,
         )
     }
 }

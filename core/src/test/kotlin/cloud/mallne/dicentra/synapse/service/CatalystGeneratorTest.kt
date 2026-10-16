@@ -75,7 +75,13 @@ class CatalystGeneratorTest {
             (requestBody.content?.get(ContentType.Application.Json)?.schema as? Value<JsonSchema>)?.value,
         )
         assertEquals(JsonType.OBJECT, requestSchema.type)
-        assertTrue(requestSchema.properties.orEmpty().keys.containsAll(setOf("version", "body", "typedParameters", "identities")))
+        assertTrue(requestSchema.properties.orEmpty().keys.containsAll(setOf("version", "body", "typedParameters", "identities", "bodyFormat")))
+        assertEquals(setOf(ContentType.Application.Json), requestBody.content?.keys)
+        assertTrue(requestBody.description.orEmpty().contains("canonical standard padded base64"))
+        assertTrue(requestBody.description.orEmpty().contains("bodyFormat"))
+        val schemaJson = kotlinx.serialization.json.Json.encodeToString(JsonSchema.serializer(), requestSchema)
+        assertTrue(schemaJson.contains("base64"))
+        assertTrue(schemaJson.contains("contentType"))
         val okResponse = assertNotNull(operation.responses?.responses?.get(200) as? Value<Response>).value
         val responseSchema = assertNotNull(
             (okResponse.content?.get(ContentType.Application.Json)?.schema as? Value<JsonSchema>)?.value,

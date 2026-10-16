@@ -62,7 +62,12 @@ class CatalystExecutorIntegrationTest {
             }
             respond(body, headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
         })
-        val executor = CatalystExecutor(listOf(JsonAdapterCatalystContribution()), client = client, allowedHosts = listOf("provider-a.example", "provider-b.example"), resolveProviderHost = ::publicTestResolution)
+        val executor = CatalystExecutor(
+            listOf(JsonAdapterCatalystContribution()),
+            client = client,
+            allowedHosts = listOf("provider-a.example", "provider-b.example"),
+            resolveProviderHost = ::publicTestResolution
+        )
         try {
             val result = executor.execute(
                 listOf(action("b", "provider-b.example"), action("a", "provider-a.example")),
@@ -85,7 +90,12 @@ class CatalystExecutorIntegrationTest {
                 respond("provider error", status = io.ktor.http.HttpStatusCode.BadGateway)
             }
         })
-        val executor = CatalystExecutor(listOf(JsonAdapterCatalystContribution()), client = client, allowedHosts = listOf("provider-a.example", "provider-b.example"), resolveProviderHost = ::publicTestResolution)
+        val executor = CatalystExecutor(
+            listOf(JsonAdapterCatalystContribution()),
+            client = client,
+            allowedHosts = listOf("provider-a.example", "provider-b.example"),
+            resolveProviderHost = ::publicTestResolution
+        )
         try {
             val failure = assertFailsWith<CatalystPartialExecutionException> {
                 executor.execute(
@@ -228,6 +238,87 @@ class CatalystExecutorIntegrationTest {
     }
 
     private fun publicTestResolution(host: String) = listOf(InetAddress.getByName("8.8.8.8"))
+
+    @Test
+    fun `generated client wraps pre-serialized XML as JSON instead of sending XML to browser upstream`(): Unit = runBlocking {
+        val bytes = "<wfs:GetFeature xmlns:wfs=\"http://www.opengis.net/wfs/2.0\"/>\r\n".encodeToByteArray()
+        var called = false
+        val client = HttpClient(MockEngine { request ->
+            called = true
+            assertEquals("catalyst.example", request.url.host)
+            assertEquals(ContentType.Application.Json, request.body.contentType?.withoutParameters())
+            val envelope = Json.decodeFromString(CatalystRequest.serializer(), (request.body as TextContent).text)
+            assertEquals(cloud.mallne.dicentra.aviator.plugin.synapse.CatalystBodyFormat.Base64("application/xml"), envelope.bodyFormat)
+            kotlin.test.assertContentEquals(bytes, kotlin.io.encoding.Base64.Default.decode((envelope.body as JsonPrimitive).content))
+            respond("[]", headers = headersOf(HttpHeaders.ContentType, "application/json"))
+        })
+        val generator = CatalystGenerator(
+            SynapseConfig(
+                security = Security(groups = SecurityGroups()), data = Database(),
+                server = Server(cors = ServerCors()), catalyst = Catalyst(serverName = "catalyst.example"),
+            )
+        )
+        val definition = generator.generateWrapper(listOf(generator.generateFor(action("wfs", "provider-a.example").route)))
+        try {
+            val service = KtorAviatorServiceConverter(client, Json).build(definition) {
+                add(SynapsePlugin.install {})
+                add(JsonAdapter.install {})
+            }.single()
+            service.requestContextful<JsonElement, cloud.mallne.dicentra.aviator.core.io.RawRequestBody>(
+                requestBody = cloud.mallne.dicentra.aviator.core.io.RawRequestBody(bytes, "application/xml"),
+            )
+            assertEquals(true, called)
+        } finally {
+            client.close()
+        }
+    }
+
+    @Test
+    fun `public service definition host can be approved without duplicating deployment allowlist`() = runBlocking {
+        val host = "public-provider.example"
+        var requested = false
+        val client = HttpClient(MockEngine { request ->
+            requested = true
+            assertEquals(host, request.url.host)
+            respond("{\"ok\":true}", headers = headersOf(HttpHeaders.ContentType, "application/json"))
+        })
+        val executor = CatalystExecutor(
+            listOf(JsonAdapterCatalystContribution()),
+            client = client,
+            allowedHosts = emptyList(),
+            allowPublicServiceHosts = true,
+            resolveProviderHost = ::publicTestResolution,
+        )
+        try {
+            assertEquals("[{\"ok\":true}]", executor.execute(listOf(action("public", host)), CatalystRequest()).toString())
+            assertEquals(true, requested)
+        } finally {
+            executor.close()
+        }
+    }
+
+    @Test
+    fun `scoped service hosts still require the deployment allowlist`(): Unit = runBlocking {
+        var called = false
+        val guardedClient = HttpClient(MockEngine { called = true; error("Unapproved scoped host reached upstream") })
+        val executor = CatalystExecutor(
+            listOf(JsonAdapterCatalystContribution()),
+            client = guardedClient,
+            allowedHosts = emptyList(),
+            allowPublicServiceHosts = true,
+            resolveProviderHost = ::publicTestResolution,
+        )
+        try {
+            val scoped = action("scoped", "scoped-provider.example").let { it.copy(service = it.service.copy(scope = "tenant")) }
+            val failure = kotlin.test.assertFailsWith<CatalystUpstreamFailureException> {
+                executor.execute(listOf(scoped), CatalystRequest())
+            }
+            kotlin.test.assertIs<CatalystOutboundPolicyException>(failure.cause)
+            assertEquals(false, called)
+        } finally {
+            executor.close()
+        }
+    }
 
     private fun action(id: String, host: String, includeXml: Boolean = false): ResolvedCatalystAction {
         val materializations = buildMap {

@@ -84,6 +84,9 @@ data class Catalyst(
     val maxAggregateResponseBytes: Long = 33_554_432,
     @SerialName("allowed_hosts")
     val allowedHosts: String = "",
+    /** Allow exact hosts from public service definitions, which only superadmins may publish. */
+    @SerialName("allow_public_service_hosts")
+    val allowPublicServiceHosts: Boolean = false,
     @SerialName("per_target_timeout_millis")
     val perTargetTimeoutMillis: Long = 15_000,
     @SerialName("overall_timeout_millis")

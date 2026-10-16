@@ -19,22 +19,7 @@ fun Application.configureHTTP() {
     val config = environment.config.getAs<SynapseConfig>()
     install(ForwardedHeaders) // WARNING: for security, do not include this if not behind a reverse proxy
     install(XForwardedHeaders) // WARNING: for security, do not include this if not behind a reverse proxy
-    install(CORS) {
-        allowMethod(HttpMethod.Options)
-        allowMethod(HttpMethod.Put)
-        allowMethod(HttpMethod.Delete)
-        allowMethod(HttpMethod.Patch)
-        allowHeader(HttpHeaders.Authorization)
-        allowHeader(HttpHeaders.ContentType)
-        if (config.server.cors.all) {
-            anyHost()
-        }
-        if (config.server.cors.hosts.isNotEmpty()) {
-            for (string in config.server.cors.hosts) {
-                allowHost(string)
-            }
-        }
-    }
+    configureCatalystCors(config.server.cors.hosts, config.server.cors.all)
     install(CachingHeaders) {
         options { call, outgoingContent ->
             when (outgoingContent.contentType?.withoutParameters()) {
@@ -50,4 +35,24 @@ fun Application.configureHTTP() {
     install(RequestValidation) {
     }
     install(AutoHeadResponse)
+}
+
+/** Shared with endpoint tests so browser preflight exercises the deployment CORS policy. */
+internal fun Application.configureCatalystCors(hosts: List<String>, all: Boolean = false) {
+    install(CORS) {
+        allowMethod(HttpMethod.Options)
+        allowMethod(HttpMethod.Put)
+        allowMethod(HttpMethod.Delete)
+        allowMethod(HttpMethod.Patch)
+        allowHeader(HttpHeaders.Authorization)
+        allowHeader(HttpHeaders.ContentType)
+        if (all) {
+            anyHost()
+        }
+        if (hosts.isNotEmpty()) {
+            for (string in hosts) {
+                allowHost(string)
+            }
+        }
+    }
 }

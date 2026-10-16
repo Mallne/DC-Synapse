@@ -3,6 +3,7 @@ package cloud.mallne.dicentra.synapse.service
 import cloud.mallne.dicentra.aviator.client.ktor.KtorAviatorServiceConverter
 import cloud.mallne.dicentra.aviator.core.AviatorExtensionSpec.`x-dicentra-aviator-pluginMaterialization`
 import cloud.mallne.dicentra.aviator.core.NoBody
+import cloud.mallne.dicentra.aviator.core.io.RawRequestBody
 import cloud.mallne.dicentra.aviator.core.execution.AviatorExecutionContext
 import cloud.mallne.dicentra.aviator.core.execution.RequestParameters
 import cloud.mallne.dicentra.aviator.core.plugins.BasicPluginActivationScope
@@ -30,6 +31,7 @@ class CatalystExecutor(
     private val maxResponseBytes: Long = 16_777_216,
     maxAggregateResponseBytes: Long = 33_554_432,
     allowedHosts: List<String> = emptyList(),
+    private val allowPublicServiceHosts: Boolean = false,
     resolveProviderHost: (String) -> List<InetAddress> = { InetAddress.getAllByName(it).toList() },
 ) : AutoCloseable {
     private val providersByIdentity = contributions.groupBy { it.identity }
@@ -60,6 +62,7 @@ class CatalystExecutor(
     suspend fun execute(actions: List<ResolvedCatalystAction>, request: CatalystRequest): JsonElement {
         require(actions.isNotEmpty()) { "At least one action is required" }
         val codecRegistry = CatalystParameterCodecs(contributions.flatMap { it.parameterCodecs })
+        val serializedBody: RawRequestBody?
         val parameters = try {
             // Bind against each original action schema before filters or provider invocation. The
             // locator-group candidates must expose the same public parameter contract.
@@ -68,7 +71,8 @@ class CatalystExecutor(
             require(actions.map { it.route.body }.distinct().size == 1) {
                 "Selected actions do not share a body contract"
             }
-            CatalystInputBinder.validateBody(request.body, actions.first().route, json)
+            serializedBody = CatalystInputBinder.serializedBody(request, actions.first().route)
+            if (serializedBody == null) CatalystInputBinder.validateBody(request.body, actions.first().route, json)
             CatalystInputBinder.bind(request, actions.first().route, json, codecRegistry)
         } catch (cause: IllegalArgumentException) {
             throw CatalystInvalidRequestException(cause)
@@ -76,7 +80,7 @@ class CatalystExecutor(
         val selected = selectActions(actions, request, parameters)
         if (selected.isEmpty()) throw CatalystActionNotFoundException()
         return fanout.execute(selected.sortedBy { it.service.id }) { action ->
-            executeOne(action, request, parameters)
+            executeOne(action, request, parameters, serializedBody)
         }
     }
 
@@ -111,9 +115,13 @@ class CatalystExecutor(
         action: ResolvedCatalystAction,
         request: CatalystRequest,
         parameters: RequestParameters,
+        serializedBody: RawRequestBody?,
     ): JsonElement {
         try {
-            outboundPolicy.validate(action.service.serviceDefinition.servers.orEmpty().map { it.url })
+            outboundPolicy.validate(
+                action.service.serviceDefinition.servers.orEmpty().map { it.url },
+                allowServiceDefinitionHosts = allowPublicServiceHosts && action.service.scope == null,
+            )
         } catch (cause: IllegalArgumentException) {
             throw CatalystOutboundPolicyException(cause)
         }
@@ -130,7 +138,9 @@ class CatalystExecutor(
             .build(action.service.serviceDefinition) { activation.registry.forEach(::add) }
         val service = services.singleOrNull { it.serviceLocator == action.locator && it.route.method == action.route.method && it.route.path == action.route.path }
             ?: throw IllegalArgumentException("Resolved action could not be constructed")
-        val context = if (request.body == null) {
+        val context = if (serializedBody != null) {
+            service.requestContextful<JsonElement, RawRequestBody>(requestBody = serializedBody, requestParams = parameters)
+        } else if (request.body == null) {
             service.requestContextful<JsonElement, NoBody>(requestParams = parameters)
         } else {
             service.requestContextful<JsonElement, JsonElement>(requestBody = request.body, requestParams = parameters)
