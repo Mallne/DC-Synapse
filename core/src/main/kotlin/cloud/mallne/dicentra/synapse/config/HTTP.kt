@@ -19,7 +19,7 @@ fun Application.configureHTTP() {
     val config = environment.config.getAs<SynapseConfig>()
     install(ForwardedHeaders) // WARNING: for security, do not include this if not behind a reverse proxy
     install(XForwardedHeaders) // WARNING: for security, do not include this if not behind a reverse proxy
-    configureCatalystCors(config.server.cors.hosts, config.server.cors.all)
+    configureCatalystCors(environment.config.corsHosts(), config.server.cors.all)
     install(CachingHeaders) {
         options { call, outgoingContent ->
             when (outgoingContent.contentType?.withoutParameters()) {
@@ -35,6 +35,17 @@ fun Application.configureHTTP() {
     install(RequestValidation) {
     }
     install(AutoHeadResponse)
+}
+
+/** Environment-backed YAML values are scalars; HOCON/YAML lists remain supported. */
+internal fun ApplicationConfig.corsHosts(): List<String> {
+    val value = propertyOrNull("server.cors.hosts") ?: return emptyList()
+    val hosts = when (value.type) {
+        ApplicationConfigValue.Type.SINGLE -> value.getString().split(',')
+        ApplicationConfigValue.Type.LIST -> value.getList()
+        else -> throw ApplicationConfigurationException("server.cors.hosts must be a host list or comma-separated string")
+    }
+    return hosts.map(String::trim).filter(String::isNotEmpty).distinct()
 }
 
 /** Shared with endpoint tests so browser preflight exercises the deployment CORS policy. */

@@ -1,0 +1,4 @@
+server:
+  cors:
+    all: false
+    hosts: "localhost:8080, demo.example"
