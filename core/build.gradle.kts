@@ -42,7 +42,6 @@ dependencies {
     api(libs.ktor.server.caching.headers)
     api(libs.ktor.server.compression)
     api(libs.ktor.server.netty)
-    api(libs.ktor.server.config.yaml)
     api(libs.ktor.server.openapi)
     // Exposed
     api(libs.exposed.core)

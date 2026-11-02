@@ -6,7 +6,6 @@ import io.ktor.client.request.options
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.config.MapApplicationConfig
-import io.ktor.server.config.yaml.YamlConfig
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
@@ -14,15 +13,8 @@ import io.ktor.server.testing.testApplication
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
-import kotlin.test.assertNotNull
 
 class CorsConfigurationTest {
-    @Test
-    fun `YAML scalar host configuration is not silently dropped`() {
-        val config = assertNotNull(YamlConfig("cors-scalar-test.yaml"))
-        assertEquals(listOf("localhost:8080", "demo.example"), config.corsHosts())
-    }
-
     @Test
     fun `environment-style scalar hosts are split trimmed and deduplicated`() {
         val config = MapApplicationConfig(

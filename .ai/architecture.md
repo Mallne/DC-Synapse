@@ -25,7 +25,7 @@ synapse/
 |   +-- model/               # Domain models
 +-- host/                    # Entry point (Ktor EngineMain)
     +-- src/main/resources/
-        +-- application.yaml  # Configuration
+        +-- application.conf  # HOCON configuration
 ```
 
 ## API Surface
