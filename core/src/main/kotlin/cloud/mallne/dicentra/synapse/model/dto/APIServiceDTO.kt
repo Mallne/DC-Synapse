@@ -12,12 +12,10 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.Serializable
 import kotlin.time.Clock
-import kotlin.time.ExperimentalTime
-import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
 @Serializable
-data class APIServiceDTO @OptIn(ExperimentalUuidApi::class, ExperimentalTime::class) constructor(
+data class APIServiceDTO(
     val id: String = Uuid.random().toString(),
     val serviceDefinition: OpenApiDoc,
     val scope: String? = null,
@@ -33,6 +31,11 @@ data class APIServiceDTO @OptIn(ExperimentalUuidApi::class, ExperimentalTime::cl
         configuration: SynapseConfig,
         requested: ServiceDefinitionTransformationType = ServiceDefinitionTransformationType.Auto,
     ): ServiceDefinitionTransformationType? {
+        // A discovery preference must not hide native-only resources. These
+        // cannot be consumed through Catalyst's POST/aggregate transport.
+        if (requested.distill(configuration, preferredTransform) == ServiceDefinitionTransformationType.Catalyst &&
+            !catalystTransformable && nativeTransformable
+        ) return ServiceDefinitionTransformationType.Native
         return if (requested.canUse(configuration, preferredTransform, nativeTransformable, catalystTransformable)) {
             requested.distill(configuration, preferredTransform)
         } else null

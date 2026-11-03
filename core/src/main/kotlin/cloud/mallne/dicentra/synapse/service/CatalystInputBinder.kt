@@ -61,7 +61,9 @@ internal object CatalystInputBinder {
         require(undeclaredInputs.isEmpty()) {
             "Catalyst request contains inputs not declared by the action: ${undeclaredInputs.sorted().joinToString()}"
         }
-        require(inputs.values.filter { it.isRequired }.all { it.name in request.typedParameters }) {
+        require(inputs.values.filter { it.isRequired }.all { input ->
+            input.name in request.typedParameters || input.type.hasDefault()
+        }) {
             "Catalyst request is missing a required action input"
         }
 
@@ -112,7 +114,68 @@ internal object CatalystInputBinder {
             }
         }
 
+        // OpenAPI defaults are part of the action contract: materialize them after
+        // binding caller values so Weaver and the network adapter see the same
+        // parameters they would receive from a direct Aviator invocation.
+        route.input.forEach { input ->
+            if (input.name !in parameters) {
+                defaultParameter(input.type, json, codecs)?.let { parameters[input.name] = it }
+            }
+        }
+
         return RequestParameters(parameters)
+    }
+
+    private fun defaultParameter(
+        model: Model,
+        json: Json,
+        codecs: CatalystParameterCodecs,
+    ): RequestParameter? {
+        if (model is Model.Collection.List) {
+            val serializedDefault = model.default ?: return null
+            val values = json.parseToJsonElement(serializedDefault) as? JsonArray
+                ?: throw IllegalArgumentException("A list input default must be a JSON array")
+            model.constraint?.let { require(values.size in it.minItems..it.maxItems) }
+            return RequestParameter.Multi(values.map { decodeDefault(it, model.inner, json, codecs) })
+        }
+        val value = when (model) {
+            is Model.Primitive.String -> model.default?.let(::JsonPrimitive)
+            is Model.Primitive.Int -> model.default?.let(::JsonPrimitive)
+            is Model.Primitive.Double -> model.default?.let(::JsonPrimitive)
+            is Model.Primitive.Boolean -> model.default?.let(::JsonPrimitive)
+            is Model.Enum.Closed -> model.default?.let(::JsonPrimitive)
+            is Model.Enum.Open -> model.default?.let(::JsonPrimitive)
+            is Model.Union -> model.default?.let { parseDefault(it, json) }
+            else -> null
+        } ?: return null
+        return RequestParameter.Single(decodeDefault(value, model, json, codecs))
+    }
+
+    private fun parseDefault(default: String, json: Json): JsonElement =
+        runCatching { json.parseToJsonElement(default) }.getOrElse { JsonPrimitive(default) }
+
+    private fun decodeDefault(
+        value: JsonElement,
+        model: Model,
+        json: Json,
+        codecs: CatalystParameterCodecs,
+    ): Any? = when (model) {
+        is Model.Union -> model.cases.firstNotNullOfOrNull { case ->
+            runCatching { decodeDefault(value, case.model, json, codecs) }.getOrNull()
+        } ?: throw IllegalArgumentException("OpenAPI default does not match any declared union case")
+        else -> decodeValue(value, model, null, json, codecs)
+    }
+
+    private fun Model.hasDefault(): Boolean = when (this) {
+        is Model.Primitive.String -> default != null
+        is Model.Primitive.Int -> default != null
+        is Model.Primitive.Double -> default != null
+        is Model.Primitive.Boolean -> default != null
+        is Model.Enum.Closed -> default != null
+        is Model.Enum.Open -> default != null
+        is Model.Collection.List -> default != null
+        is Model.Union -> default != null
+        else -> false
     }
 
     fun validateBody(body: JsonElement?, route: Route, json: Json) {

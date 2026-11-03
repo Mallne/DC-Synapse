@@ -4,6 +4,12 @@ import cloud.mallne.dicentra.aviator.core.AviatorExtensionSpec
 import cloud.mallne.dicentra.aviator.core.AviatorExtensionSpec.`x-dicentra-aviator`
 import cloud.mallne.dicentra.aviator.core.AviatorExtensionSpec.`x-dicentra-aviator-pluginMaterialization`
 import cloud.mallne.dicentra.aviator.core.AviatorExtensionSpec.`x-dicentra-aviator-serviceDelegateCall`
+import cloud.mallne.dicentra.aviator.core.AviatorExtensionSpec.`x-dicentra-aviator-serviceOptions`
+import cloud.mallne.dicentra.aviator.plugin.weaver.WeaverPlugin
+import cloud.mallne.dicentra.aviator.plugin.weaver.WeaverServiceObject
+import cloud.mallne.dicentra.weaver.core.specification.weaverSchema
+import cloud.mallne.dicentra.weaver.core.specification.ObjectType
+import cloud.mallne.dicentra.weaver.core.specification.Wol
 import cloud.mallne.dicentra.aviator.core.ServiceMethods
 import cloud.mallne.dicentra.aviator.core.NoBody
 import cloud.mallne.dicentra.aviator.core.plugins.BasicPluginActivationScope
@@ -27,6 +33,8 @@ import cloud.mallne.dicentra.synapse.statics.Serialization
 import cloud.mallne.dicentra.aviator.core.execution.RequestParameter
 import cloud.mallne.dicentra.aviator.core.execution.RequestParameters
 import cloud.mallne.dicentra.aviator.plugin.synapse.CatalystParameterValue
+import cloud.mallne.dicentra.aviator.plugin.synapse.CatalystParameterCodecs
+import cloud.mallne.dicentra.aviator.koas.typed.Route
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -35,6 +43,9 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.headersOf
 import io.ktor.http.content.TextContent
 import io.ktor.openapi.*
+import io.ktor.openapi.ParameterType
+import cloud.mallne.dicentra.aviator.koas.typed.Model
+import cloud.mallne.dicentra.aviator.koas.typed.NamingContext
 import io.ktor.openapi.ReferenceOr.Value
 import kotlinx.coroutines.runBlocking
 import java.net.InetAddress
@@ -49,6 +60,51 @@ import kotlin.test.assertFailsWith
 
 class CatalystExecutorIntegrationTest {
     private val locator = ServiceLocator("parcels", ServiceMethods.GATHER)
+
+    @Test
+    fun `required logical inputs are validated before Weaver dispatches native query names`(): Unit = runBlocking {
+        val options = WeaverServiceObject(requestParametersSchema = weaverSchema("query") {
+            root("parameters", Wol.reference("out"))
+            transform("out", "unused") { objectValue { source("native", Wol.path("logical"), ObjectType.String) } }
+        })
+        val definition = OpenApiDoc.build {
+            `x-dicentra-aviator` = AviatorExtensionSpec.SpecVersion
+            info = OpenApiInfo(title = "Query projection", version = "1")
+            servers { server("https://provider-a.example") }
+        }.copy(paths = mapOf("/query" to Value(PathItem(get = Operation.build {
+            operationId = "QueryProjection"
+            `x-dicentra-aviator-serviceDelegateCall` = locator
+            `x-dicentra-aviator-serviceOptions` = options.usable()
+            parameters { query("logical") { required = true; schema = JsonSchema(type = JsonType.STRING) } }
+            responses { response(200) { ContentType.Application.Json { schema = JsonSchema(type = JsonType.INTEGER) } } }
+        }))))
+        val route = AviatorServiceUtils.extractServiceLocators(definition).single().second
+        val action = ResolvedCatalystAction(APIServiceDTO(id = "query", serviceDefinition = definition), route, locator)
+        var requests = 0
+        val client = HttpClient(MockEngine { request ->
+            requests++
+            assertEquals("test", request.url.parameters["native"])
+            assertEquals(null, request.url.parameters["logical"])
+            respond("1", headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
+        })
+        val weaver = object : CatalystPluginContribution {
+            override val identity = WeaverPlugin.identity
+            override val activateByDefault = true
+            override fun create() = WeaverPlugin.install { }
+        }
+        val executor = CatalystExecutor(listOf(JsonAdapterCatalystContribution(), weaver), client = client,
+            allowedHosts = listOf("provider-a.example"), resolveProviderHost = ::publicTestResolution)
+        try {
+            assertFailsWith<CatalystInvalidRequestException> { executor.execute(listOf(action), CatalystRequest()) }
+            assertEquals(0, requests)
+            val result = executor.execute(listOf(action), CatalystRequest(typedParameters = mapOf("logical" to
+                CatalystParameterValue(CatalystParameterValue.Cardinality.SINGLE, listOf(JsonPrimitive("test"))))))
+            assertEquals("[1]", result.toString())
+            assertEquals(1, requests)
+        } finally {
+            executor.close()
+        }
+    }
 
     @Test
     fun `executes through Aviator and flattens results in deterministic service order`(): Unit = runBlocking {
@@ -76,6 +132,206 @@ class CatalystExecutorIntegrationTest {
 
             assertEquals("[1,2,3]", result.toString())
             assertEquals(listOf("provider-a.example", "provider-b.example"), requests)
+        } finally {
+            executor.close()
+        }
+    }
+
+    @Test
+    fun `fanout binds provider-specific optional input schemas independently`(): Unit = runBlocking {
+        val client = HttpClient(MockEngine {
+            respond("{\"ok\":true}", headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
+        })
+        val executor = CatalystExecutor(
+            listOf(JsonAdapterCatalystContribution()),
+            client = client,
+            allowedHosts = listOf("provider-a.example", "provider-b.example"),
+            resolveProviderHost = ::publicTestResolution,
+        )
+        try {
+            val first = action("a", "provider-a.example").let { action ->
+                action.copy(route = action.route.copy(input = listOf(
+                    Route.Input("providerAFilter", Model.Primitive.String(null, null, null), false, ParameterType.query, null)
+                )))
+            }
+            val second = action("b", "provider-b.example").let { action ->
+                action.copy(route = action.route.copy(input = listOf(
+                    Route.Input("providerBLimit", Model.Primitive.Int(null, null, null), false, ParameterType.query, null)
+                )))
+            }
+
+            assertEquals("[{\"ok\":true},{\"ok\":true}]", executor.execute(listOf(first, second), CatalystRequest()).toString())
+        } finally {
+            executor.close()
+        }
+    }
+
+    @Test
+    fun `ordered fallback stops after first successful action`(): Unit = runBlocking {
+        val requests = mutableListOf<String>()
+        val client = HttpClient(MockEngine { request ->
+            requests += request.url.host
+            if (request.url.host == "provider-a.example") {
+                respond("provider unavailable", status = io.ktor.http.HttpStatusCode.BadGateway)
+            } else {
+                respond("{\"ok\":true}", headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
+            }
+        })
+        val fallbackFilter = object : CatalystFallbackActionFilter {
+            override val identity = "test:ordered-fallback"
+            override fun select(
+                candidates: List<ResolvedCatalystAction>,
+                request: CatalystRequest,
+                parameters: RequestParameters,
+            ) = candidates.sortedBy { it.service.id }
+        }
+        val executor = CatalystExecutor(
+            listOf(JsonAdapterCatalystContribution()),
+            filters = listOf(fallbackFilter),
+            client = client,
+            allowedHosts = listOf("provider-a.example", "provider-b.example"),
+            resolveProviderHost = ::publicTestResolution,
+        )
+        try {
+            val result = executor.execute(
+                listOf(action("a", "provider-a.example"), action("b", "provider-b.example")),
+                CatalystRequest(),
+            )
+
+            assertEquals("[{\"ok\":true}]", result.toString())
+            assertEquals(listOf("provider-a.example", "provider-b.example"), requests)
+        } finally {
+            executor.close()
+        }
+    }
+
+    @Test
+    fun `ordered fallback enforces target and aggregate response limits`(): Unit = runBlocking {
+        val filter = object : CatalystFallbackActionFilter {
+            override val identity = "test:bounded-fallback"
+            override fun select(candidates: List<ResolvedCatalystAction>, request: CatalystRequest, parameters: RequestParameters) = candidates
+        }
+        val actions = listOf(action("a", "provider-a.example"), action("b", "provider-b.example"))
+        val responseClient = HttpClient(MockEngine {
+            respond("{\"long\":\"payload\"}", headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
+        })
+        val responseLimited = CatalystExecutor(
+            listOf(JsonAdapterCatalystContribution()), filters = listOf(filter), client = responseClient,
+            allowedHosts = listOf("provider-a.example", "provider-b.example"),
+            resolveProviderHost = ::publicTestResolution, maxAggregateResponseBytes = 2,
+        )
+        try {
+            assertFailsWith<CatalystAggregateLimitException> {
+                responseLimited.execute(actions.take(1), CatalystRequest())
+            }
+        } finally {
+            responseLimited.close()
+        }
+
+        val targetLimited = CatalystExecutor(
+            listOf(JsonAdapterCatalystContribution()), filters = listOf(filter),
+            client = HttpClient(MockEngine { respond("{}") }), maxTargets = 1,
+            allowedHosts = listOf("provider-a.example", "provider-b.example"),
+            resolveProviderHost = ::publicTestResolution,
+        )
+        try {
+            assertFailsWith<CatalystTargetLimitException> {
+                targetLimited.execute(actions, CatalystRequest())
+            }
+        } finally {
+            targetLimited.close()
+        }
+    }
+
+    @Test
+    fun `binder validates logical inputs declared by the OpenAPI operation`() {
+        val route = action("open-meteo", "provider-a.example").route.copy(
+            input = listOf(
+                Route.Input("latitude", Model.Primitive.Double(null, null, null), false, ParameterType.query, null),
+                Route.Input("longitude", Model.Primitive.Double(null, null, null), false, ParameterType.query, null),
+                Route.Input("lat", Model.Primitive.String(null, null, null), false, ParameterType.query, null),
+                Route.Input("lon", Model.Primitive.String(null, null, null), false, ParameterType.query, null),
+                Route.Input("date", Model.Primitive.String(null, null, null), false, ParameterType.query, null),
+                Route.Input("last_date", Model.Primitive.String(null, null, null), false, ParameterType.query, null),
+            ),
+        )
+        val request = CatalystRequest(
+            typedParameters = mapOf(
+                "lat" to CatalystParameterValue(CatalystParameterValue.Cardinality.SINGLE, listOf(JsonPrimitive("51.4")), "kotlin.String"),
+                "lon" to CatalystParameterValue(CatalystParameterValue.Cardinality.SINGLE, listOf(JsonPrimitive("10.8")), "kotlin.String"),
+                "date" to CatalystParameterValue(CatalystParameterValue.Cardinality.SINGLE, listOf(JsonPrimitive("2026-11-02")), "kotlin.String"),
+                "last_date" to CatalystParameterValue(CatalystParameterValue.Cardinality.SINGLE, listOf(JsonPrimitive("2026-11-05")), "kotlin.String"),
+            ),
+        )
+
+        val parameters = CatalystInputBinder.bind(
+            request,
+            route,
+            Json,
+            CatalystParameterCodecs(emptyList()),
+        )
+
+        assertEquals(setOf("lat", "lon", "date", "last_date"), parameters.keys)
+    }
+
+    @Test
+    fun `binder materializes declared input defaults when omitted`() {
+        val route = action("defaulted", "provider-a.example").route.copy(
+            input = listOf(
+                Route.Input("mode", Model.Primitive.String("forecast", null, null), true, ParameterType.query, null),
+                Route.Input("limit", Model.Primitive.Int(7, null, null), false, ParameterType.query, null),
+                Route.Input(
+                    "fields",
+                    Model.Collection.List(Model.Primitive.String(null, null, null), "[\"current\",\"hourly\"]", null, null),
+                    false,
+                    ParameterType.query,
+                    null,
+                ),
+                Route.Input("optionalFields", Model.Collection.List(Model.Primitive.String(null, null, null), null, null, null), false, ParameterType.query, null),
+                Route.Input("quotedMode", Model.Primitive.String("daily", null, null), false, ParameterType.query, null),
+                Route.Input(
+                    "booleanLikeEnum",
+                    Model.Enum.Open(NamingContext.Named("booleanLikeEnum"), listOf("true"), "true", null),
+                    false,
+                    ParameterType.query,
+                    null,
+                ),
+            ),
+        )
+
+        val parameters = CatalystInputBinder.bind(
+            CatalystRequest(),
+            route,
+            Json,
+            CatalystParameterCodecs(emptyList()),
+        )
+
+        assertEquals("forecast", (parameters["mode"] as RequestParameter.Single<*>).value)
+        assertEquals(7, (parameters["limit"] as RequestParameter.Single<*>).value)
+        assertEquals(listOf("current", "hourly"), (parameters["fields"] as RequestParameter.Multi<*>).value)
+        assertEquals("daily", (parameters["quotedMode"] as RequestParameter.Single<*>).value)
+        assertEquals("true", (parameters["booleanLikeEnum"] as RequestParameter.Single<*>).value)
+        assertEquals(null, parameters["optionalFields"])
+    }
+
+    @Test
+    fun `executor sends a declared default to the provider when caller omits it`() = runBlocking {
+        var actualMode: String? = null
+        val client = HttpClient(MockEngine { request ->
+            actualMode = request.url.parameters["mode"]
+            respond("{\"ok\":true}", headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
+        })
+        val executor = CatalystExecutor(
+            listOf(JsonAdapterCatalystContribution()),
+            client = client,
+            allowedHosts = listOf("provider-a.example"),
+            resolveProviderHost = ::publicTestResolution,
+        )
+        try {
+            val action = action("defaulted", "provider-a.example", defaultQuery = "mode" to "forecast")
+
+            assertEquals("[{\"ok\":true}]", executor.execute(listOf(action), CatalystRequest()).toString())
+            assertEquals("forecast", actualMode)
         } finally {
             executor.close()
         }
@@ -359,7 +615,12 @@ class CatalystExecutorIntegrationTest {
         }
     }
 
-    private fun action(id: String, host: String, includeXml: Boolean = false): ResolvedCatalystAction {
+    private fun action(
+        id: String,
+        host: String,
+        includeXml: Boolean = false,
+        defaultQuery: Pair<String, String>? = null,
+    ): ResolvedCatalystAction {
         val materializations = buildMap {
             put(JsonAdapter.identity, kotlinx.serialization.json.JsonObject(emptyMap()))
             if (includeXml) put(XmlAdapter.identity, kotlinx.serialization.json.JsonObject(emptyMap()))
@@ -368,6 +629,17 @@ class CatalystExecutorIntegrationTest {
             operationId = "GetParcels"
             `x-dicentra-aviator-serviceDelegateCall` = locator
             `x-dicentra-aviator-pluginMaterialization` = materializations
+            defaultQuery?.let { (name, default) ->
+                parameters {
+                    query(name) {
+                        required = true
+                        schema = JsonSchema(
+                            type = JsonType.STRING,
+                            default = GenericElementWrapper(default, String.serializer()),
+                        )
+                    }
+                }
+            }
         }
         val definition = OpenApiDoc.build {
             `x-dicentra-aviator` = AviatorExtensionSpec.SpecVersion

@@ -111,11 +111,14 @@ internal fun Route.catalystEndpoint(
             call.respond(executeActions(actions, request))
         } catch (_: MissingCatalystPluginException) {
             call.respond(HttpStatusCode.ServiceUnavailable, JsonObject(mapOf("error" to JsonPrimitive("Action unavailable"))))
-        } catch (_: CatalystUpstreamFailureException) {
+        } catch (failure: CatalystUpstreamFailureException) {
+            call.application.log.warn("Catalyst upstream execution failed: ${failure.cause?.message ?: "no result returned"}", failure.cause)
             call.respond(HttpStatusCode.BadGateway, JsonObject(mapOf("error" to JsonPrimitive("Upstream execution failed"))))
-        } catch (_: CatalystInvalidRequestException) {
+        } catch (invalid: CatalystInvalidRequestException) {
+            call.application.log.warn("Catalyst request was rejected: ${invalid.cause?.message}", invalid.cause)
             call.respond(HttpStatusCode.BadRequest, JsonObject(mapOf("error" to JsonPrimitive("Invalid action inputs or body envelope; check declared media type and base64 XML data"))))
-        } catch (_: CatalystPartialExecutionException) {
+        } catch (failure: CatalystPartialExecutionException) {
+            call.application.log.warn("Catalyst fan-out had upstream failures: ${failure.cause?.message ?: "unknown cause"}", failure.cause)
             call.respond(HttpStatusCode.BadGateway, JsonObject(mapOf("error" to JsonPrimitive("One or more upstream executions failed"))))
         } catch (_: CatalystExecutionTimeoutException) {
             call.respond(HttpStatusCode.GatewayTimeout, JsonObject(mapOf("error" to JsonPrimitive("Catalyst execution timed out"))))

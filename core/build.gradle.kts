@@ -78,6 +78,7 @@ dependencies {
     api(libs.dc.polyfill)
 
     testImplementation(kotlin("test"))
+    testImplementation(libs.dc.weaver.core)
     testImplementation(libs.ktor.server.test.host)
     testImplementation(libs.ktor.client.mock)
 }

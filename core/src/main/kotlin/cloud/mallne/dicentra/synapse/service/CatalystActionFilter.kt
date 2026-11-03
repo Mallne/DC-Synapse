@@ -16,3 +16,6 @@ interface CatalystActionFilter {
         parameters: RequestParameters,
     ): List<ResolvedCatalystAction>?
 }
+
+/** Marker for ordered alternatives: execute one action at a time and stop at first success. */
+interface CatalystFallbackActionFilter : CatalystActionFilter
