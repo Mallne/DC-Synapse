@@ -70,7 +70,21 @@ class CatalystExecutor(
         } catch (cause: IllegalArgumentException) {
             throw CatalystInvalidRequestException(cause)
         }
-        val selection = selectActionPlan(actions, request, selectionParameters)
+        val validatedSelectionParameters = try {
+            CatalystInputBinder.validateSelectionInputs(
+                request = request,
+                routes = actions.map { it.route },
+                parameters = selectionParameters,
+                names = if (request.identities.isEmpty()) {
+                    filters.flatMapTo(mutableSetOf()) { it.selectionInputs }
+                } else emptySet(),
+                json = json,
+                codecs = codecRegistry,
+            )
+        } catch (cause: IllegalArgumentException) {
+            throw CatalystInvalidRequestException(cause)
+        }
+        val selection = selectActionPlan(actions, request, validatedSelectionParameters)
         if (selection.actions.isEmpty()) throw CatalystActionNotFoundException()
 
         if (selection.orderedFallback) {

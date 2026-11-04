@@ -45,6 +45,7 @@ import io.ktor.http.content.TextContent
 import io.ktor.openapi.*
 import io.ktor.openapi.ParameterType
 import cloud.mallne.dicentra.aviator.koas.typed.Model
+import cloud.mallne.dicentra.aviator.koas.typed.Constraints
 import cloud.mallne.dicentra.aviator.koas.typed.NamingContext
 import io.ktor.openapi.ReferenceOr.Value
 import kotlinx.coroutines.runBlocking
@@ -272,6 +273,51 @@ class CatalystExecutorIntegrationTest {
         )
 
         assertEquals(setOf("lat", "lon", "date", "last_date"), parameters.keys)
+    }
+
+    @Test
+    fun `selection inputs are decoded and constrained from every candidate schema before filtering`() {
+        val route = action("weather", "provider-a.example").route.copy(
+            input = listOf(
+                Route.Input(
+                    "lat",
+                    Model.Primitive.Double(null, null, Constraints.Number(false, -90.0, false, 90.0, null)),
+                    true,
+                    ParameterType.query,
+                    null,
+                ),
+                Route.Input(
+                    "lon",
+                    Model.Primitive.Double(null, null, Constraints.Number(false, -180.0, false, 180.0, null)),
+                    true,
+                    ParameterType.query,
+                    null,
+                ),
+            ),
+        )
+        fun request(latitude: Double) = CatalystRequest(
+            typedParameters = mapOf(
+                "lat" to CatalystParameterValue(CatalystParameterValue.Cardinality.SINGLE, listOf(JsonPrimitive(latitude)), "kotlin.Double"),
+                "lon" to CatalystParameterValue(CatalystParameterValue.Cardinality.SINGLE, listOf(JsonPrimitive(10.0)), "kotlin.Double"),
+            ),
+        )
+        val codecs = CatalystParameterCodecs(emptyList())
+
+        val valid = CatalystInputBinder.validateSelectionInputs(
+            request(51.4),
+            listOf(route, route.copy()),
+            RequestParameters(),
+            setOf("lat", "lon"),
+            Json,
+            codecs,
+        )
+        assertEquals(51.4, (valid["lat"] as RequestParameter.Single<*>).value)
+
+        assertFailsWith<IllegalArgumentException> {
+            CatalystInputBinder.validateSelectionInputs(
+                request(91.0), listOf(route), RequestParameters(), setOf("lat", "lon"), Json, codecs,
+            )
+        }
     }
 
     @Test

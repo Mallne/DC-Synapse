@@ -23,6 +23,45 @@ import kotlinx.serialization.json.decodeFromJsonElement
 
 /** Validates Catalyst values against the original action's declared inputs before Aviator runs. */
 internal object CatalystInputBinder {
+    fun validateSelectionInputs(
+        request: CatalystRequest,
+        routes: List<Route>,
+        parameters: RequestParameters,
+        names: Set<String>,
+        json: Json,
+        codecs: CatalystParameterCodecs,
+    ): RequestParameters {
+        if (names.isEmpty()) return parameters
+        val validated = parameters.toMutableMap()
+        names.forEach { name ->
+            val declarations = routes.mapNotNull { route -> route.input.firstOrNull { it.name == name } }
+            if (declarations.isEmpty()) return@forEach
+            val declaration = declarations.first()
+            require(declarations.all {
+                it.type.hasSameSelectionContract(declaration.type) && it.isRequired == declaration.isRequired
+            }) {
+                "Catalyst candidates do not share the selection input contract for '$name'"
+            }
+            val transport = request.typedParameters[name]
+            if (transport == null) {
+                require(!declaration.isRequired || declaration.type.hasDefault()) {
+                    "Catalyst request is missing required selection input '$name'"
+                }
+                defaultParameter(declaration.type, json, codecs)?.let { validated[name] = it }
+                return@forEach
+            }
+            require(transport.cardinality == CatalystParameterValue.Cardinality.SINGLE) {
+                "Catalyst selection input '$name' must be single-valued"
+            }
+            require(transport.values.size == 1) {
+                "Catalyst selection input '$name' must contain exactly one value"
+            }
+            val value = decodeValue(transport.values.single(), declaration.type, transport.codec, json, codecs)
+            validated[name] = RequestParameter.Single(value)
+        }
+        return RequestParameters(validated)
+    }
+
     fun serializedBody(request: CatalystRequest, route: Route): RawRequestBody? {
         val format = request.bodyFormat as? CatalystBodyFormat.Base64 ?: return null
         require(format.contentType.none { it.code < 32 || it.code == 127 }) { "Invalid body content type" }
@@ -176,6 +215,14 @@ internal object CatalystInputBinder {
         is Model.Collection.List -> default != null
         is Model.Union -> default != null
         else -> false
+    }
+
+    private fun Model.hasSameSelectionContract(other: Model): Boolean = when {
+        this is Model.Primitive.String && other is Model.Primitive.String -> constraint == other.constraint
+        this is Model.Primitive.Int && other is Model.Primitive.Int -> constraint == other.constraint
+        this is Model.Primitive.Double && other is Model.Primitive.Double -> constraint == other.constraint
+        this is Model.Primitive.Boolean && other is Model.Primitive.Boolean -> true
+        else -> this == other
     }
 
     fun validateBody(body: JsonElement?, route: Route, json: Json) {
