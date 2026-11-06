@@ -5,7 +5,7 @@ agp = "9.4.1"
 android-compileSdk = "37"
 # @keep
 android-minSdk = "24"
-ben-manes-versions-v = "0.66.0"
+ben-manes-versions-v = "0.67.0"
 dc-aviator = "1.0.5"
 dc-polyfill = "1.0.2"
 dc-weaver = "1.1.0"
