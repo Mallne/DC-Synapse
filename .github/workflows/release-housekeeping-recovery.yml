@@ -1,0 +1,67 @@
+name: Release housekeeping recovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Published release tag whose post-release snapshot bump should be verified
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-housekeeping-recovery-master
+  cancel-in-progress: false
+
+jobs:
+  verify-snapshot:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Verify release and repair snapshot bump if needed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid release tag: $RELEASE_TAG" >&2
+            exit 1
+          fi
+
+          git fetch origin master --tags
+          tag_commit="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+          published_tag="$(gh release view "$RELEASE_TAG" --json tagName --jq .tagName)"
+          test "$published_tag" = "$RELEASE_TAG"
+          git merge-base --is-ancestor "$tag_commit" origin/master
+
+          tag_version="${RELEASE_TAG#v}"
+          major="$(cut -d. -f1 <<< "$tag_version")"
+          minor="$(cut -d. -f2 <<< "$tag_version")"
+          patch="$(cut -d. -f3 <<< "$tag_version")"
+          expected_version="${major}.${minor}.$((patch + 1))-SNAPSHOT"
+
+          git checkout -B recovery origin/master
+          current_version="$(sed -n 's/^VERSION_NAME=//p' gradle.properties)"
+          if [[ "$current_version" != "$expected_version" ]]; then
+            sed -i "s/^VERSION_NAME=.*/VERSION_NAME=${expected_version}/" gradle.properties
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add gradle.properties
+            git commit -m "chore: bump version to ${expected_version} [skip ci]"
+            git push origin HEAD:master
+          fi
+
+          git fetch origin master --tags
+          remote_version="$(git show origin/master:gradle.properties | sed -n 's/^VERSION_NAME=//p')"
+          test "$remote_version" = "$expected_version"
+          test "$(gh release view "$RELEASE_TAG" --json tagName --jq .tagName)" = "$RELEASE_TAG"
+          test "$(git rev-parse "${RELEASE_TAG}^{commit}")" = "$tag_commit"
+          echo "Verified published $RELEASE_TAG at $tag_commit; master VERSION_NAME=$remote_version"
