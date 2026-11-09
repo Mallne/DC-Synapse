@@ -336,13 +336,13 @@ internal object CatalystInputBinder {
                 json.decodeFromJsonElement(Boolean.serializer(), value)
             }
             is Model.Primitive.Int -> {
-                require(codec == null || codec == Int.serializer().descriptor.serialName)
+                require(codec == null || codec in numericCodecIds)
                 val decoded = json.decodeFromJsonElement(Int.serializer(), value)
                 type.constraint?.let { constraint -> require(constraint.accepts(decoded.toDouble())) }
                 decoded
             }
             is Model.Primitive.Double -> {
-                require(codec == null || codec == Double.serializer().descriptor.serialName)
+                require(codec == null || codec in numericCodecIds)
                 val decoded = json.decodeFromJsonElement(Double.serializer(), value)
                 type.constraint?.let { constraint -> require(constraint.accepts(decoded)) }
                 decoded
@@ -358,6 +358,15 @@ internal object CatalystInputBinder {
             is Model.Enum.Closed, is Model.Enum.Open -> throw IllegalArgumentException("Enum input schema could not be resolved")
         }
     }
+
+    private val numericCodecIds = setOf(
+        Byte.serializer().descriptor.serialName,
+        Short.serializer().descriptor.serialName,
+        Int.serializer().descriptor.serialName,
+        Long.serializer().descriptor.serialName,
+        Float.serializer().descriptor.serialName,
+        Double.serializer().descriptor.serialName,
+    )
 
     private fun Constraints.Number.accepts(value: Double): Boolean =
         (if (exclusiveMinimum) value > minimum else value >= minimum) &&

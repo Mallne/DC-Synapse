@@ -20,12 +20,10 @@ data class ServiceBundle(
         fun List<ServiceBundle>.buildBundles(generator: CatalystGenerator): List<OpenApiDoc> {
             val catalystTransforms =
                 this.filter { it.transformationType == ServiceDefinitionTransformationType.Catalyst }
-            val catalystRoutes = catalystTransforms.map {
-                generator.generateFor(
-                    it.route,
-                )
+            val catalystRoutes = catalystTransforms.groupBy { it.locator.toString() }.values.map {
+                generator.generateAggregate(it)
             }
-            val catalystEndpoint = generator.generateWrapper(catalystRoutes)
+            val catalystEndpoint = generator.generateWrapper(catalystRoutes, catalystTransforms)
             val natives = this.filter { it.transformationType == ServiceDefinitionTransformationType.Native }
                 .distinctBy { it.service }
             val nativeEndpoints = natives.mapNotNull { it.service.transformNative() }

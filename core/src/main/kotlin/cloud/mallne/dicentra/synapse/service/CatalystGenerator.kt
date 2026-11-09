@@ -4,6 +4,9 @@ import cloud.mallne.dicentra.aviator.core.AviatorExtensionSpec
 import cloud.mallne.dicentra.aviator.core.AviatorExtensionSpec.`x-dicentra-aviator`
 import cloud.mallne.dicentra.aviator.core.AviatorExtensionSpec.`x-dicentra-aviator-pluginMaterialization`
 import cloud.mallne.dicentra.aviator.core.AviatorExtensionSpec.`x-dicentra-aviator-serviceDelegateCall`
+import cloud.mallne.dicentra.aviator.core.AviatorExtensionSpec.`x-dicentra-aviator-serviceOptions`
+import cloud.mallne.dicentra.aviator.plugin.synapse.SynapseExtensionSpec.`x-dicentra-synapse-aggregateContracts`
+import cloud.mallne.dicentra.aviator.plugin.synapse.AggregateServiceContract
 import cloud.mallne.dicentra.aviator.koas.typed.Model
 import cloud.mallne.dicentra.aviator.koas.typed.Route
 import cloud.mallne.dicentra.aviator.model.ServiceLocator
@@ -12,32 +15,65 @@ import cloud.mallne.dicentra.aviator.plugin.synapse.CatalystRequest
 import cloud.mallne.dicentra.aviator.plugin.synapse.SynapsePlugin
 import cloud.mallne.dicentra.aviator.plugin.synapse.SynapsePluginConfig
 import cloud.mallne.dicentra.synapse.model.SynapseConfig
+import cloud.mallne.dicentra.synapse.model.dto.ServiceBundle
 import cloud.mallne.dicentra.synapse.statics.Serialization
 import io.ktor.http.*
 import io.ktor.openapi.*
 import io.ktor.openapi.KotlinxSerializerJsonSchemaInference.Companion.Default
 import io.ktor.openapi.ReferenceOr.*
 import kotlinx.serialization.builtins.serializer
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.*
 import org.koin.core.annotation.Provided
 import org.koin.core.annotation.Single
+import kotlin.io.encoding.Base64
 
 @Single
 class CatalystGenerator(
     @Provided val configuration: SynapseConfig,
     val json: Json = Serialization(),
 ) {
+    /** One receiving operation per locator, retaining every caller-visible constituent contract. */
+    fun generateAggregate(bundles: List<ServiceBundle>): Pair<String, PathItem> {
+        require(bundles.isNotEmpty())
+        require(bundles.map { it.locator.toString() }.distinct().size == 1)
+        val contracts = bundles.map { bundle ->
+            val route = bundle.route
+            AggregateServiceContract(
+                identity = bundle.service.id,
+                info = bundle.service.serviceDefinition.info,
+                options = route.`x-dicentra-aviator-serviceOptions`,
+                externalDocs = bundle.service.serviceDefinition.externalDocs,
+            )
+        }
+        return generateFor(
+            bundles.first().route,
+            contracts,
+            requestSchemas = bundles.map { Reference("#/components/schemas/${requestSchemaName(it.service.id, it.route)}") },
+            responseItems = bundles.flatMap { bundle ->
+                responseVariants(bundle).mapIndexed { index, variant ->
+                    variant as? Reference ?: Reference("#/components/schemas/${responseSchemaName(bundle.service.id, bundle.route, index)}")
+                }
+            },
+        )
+    }
+
     fun generateFor(
         route: Route,
+    ): Pair<String, PathItem> = generateFor(route, emptyList())
+
+    private fun generateFor(
+        route: Route,
+        contracts: List<AggregateServiceContract>,
+        requestSchemas: List<ReferenceOr<JsonSchema>> = emptyList(),
+        responseItems: List<ReferenceOr<JsonSchema>> = emptyList(),
     ): Pair<String, PathItem> {
         val rawLocator = route.`x-dicentra-aviator-serviceDelegateCall`
         val locator =
             rawLocator?.let { ServiceLocator(it) } ?: throw IllegalArgumentException("Service Locator is required")
         val actionSelector = CatalystActionSelector.encode(locator)
         // The generated client calls Catalyst, so only materialize its receiving plugin here.
-        // Provider plugins and private service options are retained on the original server definition.
+        // Provider plugins stay server-side. Public constituent options are carried as contracts,
+        // never installed as the receiving operation's own options/plugins.
         val plugins = mapOf(
             SynapsePlugin.identity to json.encodeToJsonElement(SynapsePluginConfig(active = true)),
             // The receiving action body is the Catalyst envelope and must be serialized as JSON.
@@ -45,15 +81,17 @@ class CatalystGenerator(
         )
         return "/catalyst/$actionSelector" to PathItem(
             post = Operation.build {
-                summary = "Execute ${route.operationId ?: locator.toString()} through Synapse Catalyst"
+                summary = "${route.operationId ?: locator.toString()} through Catalyst"
                 operationId = "Catalyst_$actionSelector"
                 `x-dicentra-aviator-serviceDelegateCall` = locator
                 `x-dicentra-aviator-pluginMaterialization` = plugins
+                if (contracts.isNotEmpty()) `x-dicentra-synapse-aggregateContracts` = contracts
                 responses {
                     response(200) {
                         description = "Ordered array of results from selected original Aviator actions."
                         ContentType.Application.Json {
-                            schema = catalystResponseSchema(route)
+                            schema = if (responseItems.isEmpty()) catalystResponseSchema(route)
+                            else aggregateResponseSchema(responseItems)
                         }
                     }
                     response(400) { description = "The request envelope or typed action input is invalid." }
@@ -89,7 +127,8 @@ class CatalystGenerator(
                         required = true,
                         content = mapOf(
                             ContentType.Application.Json to MediaType(
-                                schema = Value(catalystRequestSchema(route))
+                                schema = Value(if (requestSchemas.isEmpty()) catalystRequestSchema(route)
+                                    else JsonSchema(anyOf = requestSchemas))
                             )
                         )
                     )
@@ -97,6 +136,78 @@ class CatalystGenerator(
             )
         )
     }
+
+    private fun aggregateResponseSchema(items: List<ReferenceOr<JsonSchema>>): JsonSchema = JsonSchema(
+        type = JsonType.ARRAY,
+        items = items.distinct().let { if (it.size == 1) it.single() else Value(JsonSchema(anyOf = it)) },
+    )
+
+    private fun responseVariants(bundle: ServiceBundle): List<ReferenceOr<JsonSchema>> {
+        val schema = namespaceSchema(catalystResponseSchema(bundle.route), bundle.service.id,
+            bundle.service.serviceDefinition.components?.schemas.orEmpty().keys)
+        return responseVariants(schema.items ?: Value(JsonSchema(type = JsonType.OBJECT)))
+    }
+
+    private fun responseVariants(item: ReferenceOr<JsonSchema>): List<ReferenceOr<JsonSchema>> {
+        val schema = item.valueOrNull()
+        // Flatten only the annotation-free union introduced by Catalyst's status aggregation.
+        // Inline union cases need names for Aviator parsing and generated clients.
+        return if (schema?.anyOf?.isNotEmpty() == true && schema.copy(anyOf = null) == JsonSchema()) {
+            schema.anyOf.orEmpty().flatMap { responseVariants(it) }
+        } else listOf(item)
+    }
+
+    private fun componentPrefix(identity: String): String =
+        "Provider_" + Base64.UrlSafe.encode(identity.encodeToByteArray()).trimEnd('=') + "_"
+
+    private fun requestSchemaName(identity: String, route: Route): String =
+        "CatalystRequest_" + Base64.UrlSafe.encode(
+            json.encodeToString(listOf(identity, route.method.value, route.path)).encodeToByteArray(),
+        ).trimEnd('=')
+
+    private fun responseSchemaName(identity: String, route: Route, index: Int): String =
+        "CatalystResponseItem_${requestSchemaName(identity, route).removePrefix("CatalystRequest_")}_$index"
+
+    private fun namespaceReference(reference: String, identity: String): String {
+        val prefix = "#/components/schemas/"
+        return if (reference.startsWith(prefix)) prefix + componentPrefix(identity) + reference.removePrefix(prefix)
+        else reference
+    }
+
+    private fun namespaceReferences(
+        element: JsonElement,
+        identity: String,
+        schemaNames: Set<String>,
+    ): JsonElement = when (element) {
+        is JsonObject -> JsonObject(element.mapValues { (key, value) ->
+            when {
+                key == $$"$ref" && value is JsonPrimitive && value.isString ->
+                    JsonPrimitive(namespaceReference(value.content, identity))
+                key == "discriminator" && value is JsonObject -> JsonObject(value.mapValues { (field, mapping) ->
+                    if (field == "mapping" && mapping is JsonObject) JsonObject(mapping.mapValues { (_, target) ->
+                        if (target is JsonPrimitive && target.isString) JsonPrimitive(
+                            if (target.content in schemaNames) componentPrefix(identity) + target.content
+                            else namespaceReference(target.content, identity),
+                        ) else target
+                    }) else mapping
+                })
+                key in setOf("properties", "patternProperties", "\$defs", "definitions", "dependentSchemas") &&
+                    value is JsonObject -> JsonObject(value.mapValues { (_, schema) ->
+                        namespaceReferences(schema, identity, schemaNames)
+                    })
+                key in setOf("allOf", "anyOf", "oneOf", "not", "items", "prefixItems", "contains",
+                    "additionalProperties", "unevaluatedProperties", "propertyNames", "if", "then", "else",
+                    "additionalItems", "unevaluatedItems") -> namespaceReferences(value, identity, schemaNames)
+                // Defaults, examples, enums and extensions are payloads, not schema locations.
+                else -> value
+            }
+        })
+        is JsonArray -> JsonArray(element.map { namespaceReferences(it, identity, schemaNames) })
+        else -> element
+    }
+
+    private fun namespaceSchema(schema: JsonSchema, identity: String, schemaNames: Set<String>): JsonSchema =
+        json.decodeFromJsonElement(namespaceReferences(json.encodeToJsonElement(schema), identity, schemaNames))
 
     private fun catalystRequestSchema(route: Route): JsonSchema {
         val envelope = Default.jsonSchema<CatalystRequest>()
@@ -144,8 +255,8 @@ class CatalystGenerator(
                 "values" to Value(JsonSchema(
                     type = JsonType.ARRAY,
                     items = Value(valueSchema),
-                    minItems = if (isMulti) listModel?.constraint?.minItems ?: 0 else 1,
-                    maxItems = if (isMulti) listModel?.constraint?.maxItems?.takeIf { it != Int.MAX_VALUE } else 1,
+                    minItems = if (isMulti) listModel.constraint?.minItems ?: 0 else 1,
+                    maxItems = if (isMulti) listModel.constraint?.maxItems?.takeIf { it != Int.MAX_VALUE } else 1,
                 )),
                 "codec" to Value(JsonSchema(type = JsonType.STRING)),
             )
@@ -175,16 +286,16 @@ class CatalystGenerator(
             .mapNotNull { (_, response) -> response.types[ContentType.Application.Json] }
             .map { it.schema ?: modelSchema(it.model) }
         val itemSchemas = responseSchemas.flatMap { schema ->
-            if (schema.type == JsonType.ARRAY) listOf(schema.items?.valueOrNull() ?: JsonSchema())
-            else listOf(schema)
+            if (schema.type == JsonType.ARRAY) listOf(schema.items ?: Value(JsonSchema(type = JsonType.OBJECT)))
+            else listOf(Value(schema))
         }
             .distinct()
         val itemSchema = when (itemSchemas.size) {
             0 -> return Default.jsonSchema<List<JsonElement>>()
             1 -> itemSchemas.single()
-            else -> JsonSchema(anyOf = itemSchemas.map(::Value))
+            else -> Value(JsonSchema(anyOf = itemSchemas))
         }
-        return JsonSchema(type = JsonType.ARRAY, items = Value(itemSchema))
+        return JsonSchema(type = JsonType.ARRAY, items = itemSchema)
     }
 
     private fun Model.hasDefault(): Boolean = when (this) {
@@ -253,9 +364,12 @@ class CatalystGenerator(
         description = model.description,
     )
 
-    fun generateWrapper(paths: List<Pair<String, PathItem>>): OpenApiDoc {
+    fun generateWrapper(
+        paths: List<Pair<String, PathItem>>,
+        constituents: List<ServiceBundle> = emptyList(),
+    ): OpenApiDoc {
         val schema = if (configuration.catalyst.tlsEnabled) "https://" else "http://"
-        return OpenApiDoc.build {
+        val wrapper = OpenApiDoc.build {
             `x-dicentra-aviator` = AviatorExtensionSpec.SpecVersion
             servers {
                 server(url = schema + configuration.catalyst.serverName)
@@ -266,5 +380,30 @@ class CatalystGenerator(
                 version = AviatorExtensionSpec.SpecVersion
             )
         }.copy(paths = paths.associate { it.first to it.second.let(::Value) })
+        if (constituents.isEmpty()) return wrapper
+        val schemas = mutableMapOf<String, JsonElement>()
+        constituents.distinctBy { it.service.id }.forEach { bundle ->
+            val definition = json.encodeToJsonElement(bundle.service.serviceDefinition).jsonObject
+            val sourceSchemas = (definition["components"] as? JsonObject)?.get("schemas") as? JsonObject
+            sourceSchemas?.forEach { (name, value) ->
+                schemas[componentPrefix(bundle.service.id) + name] =
+                    namespaceReferences(value, bundle.service.id, sourceSchemas.keys)
+            }
+        }
+        // Only model schemas are public contract data. Do not publish upstream security schemes.
+        constituents.forEach { bundle ->
+            schemas[requestSchemaName(bundle.service.id, bundle.route)] = json.encodeToJsonElement(
+                namespaceSchema(catalystRequestSchema(bundle.route), bundle.service.id,
+                    bundle.service.serviceDefinition.components?.schemas.orEmpty().keys),
+            )
+            responseVariants(bundle).forEachIndexed { index, variant ->
+                if (variant is Value) {
+                    schemas[responseSchemaName(bundle.service.id, bundle.route, index)] =
+                        json.encodeToJsonElement(variant.value)
+                }
+            }
+        }
+        return json.decodeFromJsonElement(JsonObject(json.encodeToJsonElement(wrapper).jsonObject +
+            ("components" to buildJsonObject { put("schemas", JsonObject(schemas)) })))
     }
 }

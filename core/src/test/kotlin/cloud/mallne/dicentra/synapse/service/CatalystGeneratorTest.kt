@@ -4,6 +4,10 @@ import cloud.mallne.dicentra.aviator.core.AviatorExtensionSpec
 import cloud.mallne.dicentra.aviator.core.AviatorExtensionSpec.`x-dicentra-aviator-pluginMaterialization`
 import cloud.mallne.dicentra.aviator.core.AviatorExtensionSpec.`x-dicentra-aviator-serviceDelegateCall`
 import cloud.mallne.dicentra.aviator.core.AviatorExtensionSpec.`x-dicentra-aviator`
+import cloud.mallne.dicentra.aviator.plugin.synapse.SynapseExtensionSpec.`x-dicentra-synapse-aggregateContracts`
+import cloud.mallne.dicentra.synapse.model.dto.APIServiceDTO
+import cloud.mallne.dicentra.synapse.model.dto.APIServiceDTO.Companion.transform
+import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionTransformationType
 import cloud.mallne.dicentra.aviator.core.ServiceMethods
 import cloud.mallne.dicentra.aviator.model.AviatorServiceUtils
 import cloud.mallne.dicentra.aviator.model.ServiceLocator
@@ -26,10 +30,15 @@ import io.ktor.openapi.ParameterType
 import io.ktor.openapi.*
 import io.ktor.openapi.ReferenceOr.*
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlin.test.assertFalse
 
 class CatalystGeneratorTest {
     private val generator = CatalystGenerator(
@@ -41,6 +50,181 @@ class CatalystGeneratorTest {
         ),
         json = Serialization(),
     )
+
+    @Test
+    fun `generated multi-provider inline response unions can be parsed by Aviator`() {
+        fun provider(id: String) = APIServiceDTO(id = id,
+            serviceDefinition = generator.json.decodeFromString<OpenApiDoc>("""
+                {
+                  "openapi":"3.1.0", "info":{"title":"$id","version":"1.0.0"},
+                  "paths":{"/items":{"get":{
+                    "operationId":"items", "x-dicentra-aviator-serviceDelegateCall":"&.items>gather",
+                    "responses":{
+                      "200":{"description":"Items","content":{"application/json":{"schema":{
+                        "type":"array","items":{"type":"object","properties":{"$id":{"type":"string"}}}
+                      }}}},
+                      "201":{"description":"Created","content":{"application/json":{"schema":{
+                        "type":"object","properties":{"${id}Created":{"type":"boolean"}}
+                      }}}}
+                    }
+                  }}}
+                }
+            """))
+        val output = listOf(provider("first"), provider("second"))
+            .transform(ServiceDefinitionTransformationType.Catalyst, catalystGenerator = generator).single()
+        val restored = generator.json.decodeFromString<OpenApiDoc>(generator.json.encodeToString(OpenApiDoc.serializer(), output))
+        val route = AviatorServiceUtils.extractServiceLocators(restored).single().second
+        val outputModel = route.returnType.types.getValue(HttpStatusCode.OK).types
+            .getValue(ContentType.Application.Json).model as Model.Collection.List
+        assertEquals(4, (outputModel.inner as Model.Union).cases.size)
+        assertEquals(2, route.`x-dicentra-synapse-aggregateContracts`.size)
+    }
+
+    @Test
+    fun `component namespacing preserves discriminator targets and literal reference payloads`() {
+        val source = generator.json.decodeFromString<OpenApiDoc>("""
+            {
+              "openapi":"3.1.0", "info":{"title":"Pets","version":"1.0.0"},
+              "paths":{"/pets":{"get":{
+                "operationId":"pets", "x-dicentra-aviator-serviceDelegateCall":"&.pets>gather",
+                "responses":{"200":{"description":"Pets","content":{"application/json":{
+                  "schema":{"type":"array","items":{"${'$'}ref":"#/components/schemas/Pet"}}
+                }}}}
+              }}},
+              "components":{"schemas":{
+                "Pet":{"oneOf":[{"${'$'}ref":"#/components/schemas/Cat"},{"${'$'}ref":"#/components/schemas/Dog"}],
+                  "discriminator":{"propertyName":"kind","mapping":{"cat":"#/components/schemas/Cat","dog":"Dog"}}},
+                "Cat":{"type":"object","properties":{"kind":{"type":"string"}}},
+                "Dog":{"type":"object","properties":{"kind":{"type":"string"}}},
+                "Literal":{"type":"object","default":{"${'$'}ref":"#/components/schemas/Cat"},
+                  "example":{"${'$'}ref":"#/components/schemas/Cat"},
+                  "properties":{"default":{"${'$'}ref":"#/components/schemas/Cat"}}}
+              }}
+            }
+        """)
+        val output = listOf(APIServiceDTO(id = "pets", serviceDefinition = source))
+            .transform(ServiceDefinitionTransformationType.Catalyst, catalystGenerator = generator).single()
+        val schemas = generator.json.encodeToJsonElement(output).jsonObject.getValue("components")
+            .jsonObject.getValue("schemas").jsonObject
+        val cat = schemas.keys.single { it.endsWith("_Cat") }
+        val dog = schemas.keys.single { it.endsWith("_Dog") }
+        val pet = schemas.entries.single { it.key.endsWith("_Pet") }.value.jsonObject
+        val mapping = pet.getValue("discriminator").jsonObject.getValue("mapping").jsonObject
+        assertEquals("#/components/schemas/$cat", mapping.getValue("cat").jsonPrimitive.content)
+        assertEquals(dog, mapping.getValue("dog").jsonPrimitive.content)
+        val literal = schemas.entries.single { it.key.endsWith("_Literal") }.value.jsonObject
+        assertEquals("#/components/schemas/Cat", literal.getValue("default").jsonObject
+            .getValue("${'$'}ref").jsonPrimitive.content)
+        assertEquals(literal["default"], literal["example"])
+        assertEquals("#/components/schemas/$cat", literal.getValue("properties").jsonObject
+            .getValue("default").jsonObject.getValue("${'$'}ref").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `operations without operationId retain separate request schemas`() {
+        val source = generator.json.decodeFromString<OpenApiDoc>("""
+            {
+              "openapi":"3.1.0", "info":{"title":"Source","version":"1.0.0"},
+              "paths":{
+                "/text":{"post":{
+                  "x-dicentra-aviator-serviceDelegateCall":"&.text>gather",
+                  "requestBody":{"required":true,"content":{"application/json":{"schema":{"${'$'}ref":"#/components/schemas/Text"}}}}
+                }},
+                "/number":{"post":{
+                  "x-dicentra-aviator-serviceDelegateCall":"&.number>gather",
+                  "requestBody":{"required":true,"content":{"application/json":{"schema":{"${'$'}ref":"#/components/schemas/Number"}}}}
+                }}
+              },
+              "components":{"schemas":{"Text":{"type":"string"},"Number":{"type":"number"}}}
+            }
+        """)
+        val output = listOf(APIServiceDTO(id = "source", serviceDefinition = source))
+            .transform(ServiceDefinitionTransformationType.Catalyst, catalystGenerator = generator).single()
+        val operationReferences = generator.json.encodeToJsonElement(output).jsonObject.getValue("paths")
+            .jsonObject.values.map { path ->
+                path.jsonObject.getValue("post").jsonObject.getValue("requestBody").jsonObject
+                    .getValue("content").jsonObject.getValue("application/json").jsonObject
+                    .getValue("schema").jsonObject.getValue("anyOf").toString()
+            }
+        assertEquals(2, operationReferences.distinct().size,
+            "Different original actions must not reference the same receiving request schema")
+        val schemas = generator.json.encodeToJsonElement(output).jsonObject.getValue("components")
+            .jsonObject.getValue("schemas").jsonObject
+        assertEquals(2, schemas.keys.count { it.startsWith("CatalystRequest_") })
+        assertEquals(setOf("string", "number"), schemas.filterKeys { it.startsWith("CatalystRequest_") }
+            .values.map { it.jsonObject.getValue("properties").jsonObject.getValue("body")
+                .jsonObject.getValue("type").jsonPrimitive.content }.toSet())
+    }
+
+    @Test
+    fun `many providers retain distinct public contracts in one Catalyst operation`() {
+        fun provider(id: String, field: String, unit: String, type: String): APIServiceDTO {
+            val spec = generator.json.decodeFromString<OpenApiDoc>("""
+                {
+                  "openapi":"3.1.0", "x-dicentra-aviator":"1.0.0",
+                  "info":{"title":"$id", "version":"1.0.0", "license":{"name":"License $id"},
+                    "termsOfService":"https://$id.example/terms"},
+                  "externalDocs":{"url":"https://$id.example/docs","description":"Documentation $id"},
+                  "servers":[{"url":"https://$id.example"}],
+                  "paths":{"/parcels":{"get":{
+                    "operationId":"parcels",
+                    "x-dicentra-aviator-serviceDelegateCall":"&.curator.parcelService>gather",
+                    "x-dicentra-aviator-pluginMaterialization":{"private-provider-plugin":{"secret":"must-not-leak"}},
+                    "x-dicentra-aviator-serviceOptions":{
+                      "parcelLinkReference":"$id", "keys":[{"identifier":"$field","unit":"$unit"}]
+                    },
+                    "parameters":[{"name":"$field","in":"query","schema":{"type":"$type"}}],
+                    "responses":{"200":{"description":"parcels","content":{"application/json":{
+                      "schema":{"type":"array","items":{"${'$'}ref":"#/components/schemas/Parcel"}}
+                    }}}}
+                  }}},
+                  "components":{"schemas":{"Parcel":{"type":"object","properties":{"$field":{"type":"$type"}}}}}
+                }
+            """)
+            return APIServiceDTO(id = id, serviceDefinition = spec)
+        }
+        val sources = listOf(provider("hessen", "area", "squareMeters", "number"),
+            provider("other", "district", "hectare", "string"))
+        val output = sources.transform(ServiceDefinitionTransformationType.Catalyst, catalystGenerator = generator)
+        assertEquals(1, output.size)
+        val wire = generator.json.encodeToString(OpenApiDoc.serializer(), output.single())
+        assertTrue(wire.contains("x-dicentra-synapse-aggregateContracts"))
+        assertFalse(wire.contains("x-dicentra-aviator-aggregateContracts"))
+        val restored = generator.json.decodeFromString<OpenApiDoc>(wire)
+        assertEquals(1, restored.paths.size)
+        val route = AviatorServiceUtils.extractServiceLocators(restored).single().second
+        val contracts = route.`x-dicentra-synapse-aggregateContracts`
+        assertEquals(listOf("hessen", "other"), contracts.map { it.identity })
+        assertEquals(sources.map { it.serviceDefinition.info }, contracts.map { it.info })
+        assertEquals(listOf("License hessen", "License other"), contracts.map { it.info.license?.name })
+        assertEquals(listOf("hessen", "other"), contracts.map { it.info.title })
+        assertEquals(listOf("1.0.0", "1.0.0"), contracts.map { it.info.version })
+        assertEquals(listOf("https://hessen.example/terms", "https://other.example/terms"),
+            contracts.map { it.info.termsOfService })
+        assertEquals(sources.map { it.serviceDefinition.externalDocs }, contracts.map { it.externalDocs })
+        assertEquals(listOf("hessen", "other"), contracts.map {
+            it.options!!.deserialize(JsonElement.serializer()).jsonObject.getValue("parcelLinkReference").jsonPrimitive.content
+        })
+        assertFalse(wire.contains("private-provider-plugin"))
+        assertFalse(wire.contains("must-not-leak"))
+        assertEquals(setOf(SynapsePlugin.identity, JsonAdapter.identity),
+            route.`x-dicentra-aviator-pluginMaterialization`.orEmpty().keys)
+        val schemaNames = generator.json.encodeToJsonElement(restored).jsonObject.getValue("components")
+            .jsonObject.getValue("schemas").jsonObject.keys
+        assertEquals(2, schemaNames.count { it.endsWith("_Parcel") })
+        assertEquals(2, schemaNames.count { it.startsWith("CatalystRequest_") })
+        schemaNames.filter { it.endsWith("_Parcel") }.forEach { name ->
+            assertTrue(wire.contains("#/components/schemas/$name"))
+        }
+        val contractWire = generator.json.encodeToJsonElement(restored).jsonObject.getValue("paths")
+            .jsonObject.values.single().jsonObject.getValue("post").jsonObject
+            .getValue("x-dicentra-synapse-aggregateContracts")
+        assertFalse(contractWire.toString().contains("requestSchema"))
+        assertFalse(contractWire.toString().contains("responseSchema"))
+        assertTrue(wire.contains("squareMeters"))
+        assertTrue(wire.contains("hectare"))
+        assertTrue(wire.contains("anyOf"))
+    }
 
     @Test
     fun `generated operation declares JSON CatalystRequest and only receiving plugin`() {
@@ -192,6 +376,7 @@ class CatalystGeneratorTest {
             operation.`x-dicentra-aviator-pluginMaterialization`.orEmpty().keys,
         )
         assertEquals("Catalyst_${CatalystActionSelector.encode(ServiceLocator("source", ServiceMethods.GATHER))}", operation.operationId)
+        assertEquals("SourceAction through Catalyst", operation.summary)
         assertEquals(generated.first, generator.generateFor(sourceRoute).first)
     }
 }

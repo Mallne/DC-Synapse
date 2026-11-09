@@ -37,6 +37,24 @@ class CatalystInputBinderTest {
     }
 
     @Test
+    fun `binds decimal schema number despite narrow numeric transport codec`() {
+        val result = CatalystInputBinder.bind(
+            CatalystRequest(typedParameters = mapOf(
+                "latitude" to CatalystParameterValue(
+                    CatalystParameterValue.Cardinality.SINGLE,
+                    listOf(JsonPrimitive(51.26)),
+                    "kotlin.Byte",
+                ),
+            )),
+            route(input("latitude", Model.Primitive.Double(null, null, null))),
+            json,
+            codecs,
+        )
+
+        assertEquals(51.26, (result.getValue("latitude") as cloud.mallne.dicentra.aviator.core.execution.RequestParameter.Single<*>).value)
+    }
+
+    @Test
     fun `binds array schema to multiple typed values`() {
         val result = bind(
             input("labels", Model.Collection.List(Model.Primitive.String(null, null, null), null, null, null)),
