@@ -1,44 +1,27 @@
 package cloud.mallne.dicentra.synapse.statics
 
+import cloud.mallne.dicentra.aviator.plugin.synapse.ServiceDefinitionTransformationType as SharedTransformationType
 import cloud.mallne.dicentra.synapse.model.SynapseConfig
-import kotlinx.serialization.Serializable
 
-@Serializable
-enum class ServiceDefinitionTransformationType {
-    Auto, Native, Catalyst;
+typealias ServiceDefinitionTransformationType = SharedTransformationType
 
-    fun distill(
-        config: SynapseConfig,
-        preferred: ServiceDefinitionTransformationType = config.preferredTransform,
-    ): ServiceDefinitionTransformationType? {
-        val finalType = if (this == Auto) if (preferred == Auto) config.preferredTransform else preferred else this
-        return if (finalType == Auto) null else finalType
-    }
+fun ServiceDefinitionTransformationType.distill(
+    config: SynapseConfig,
+    preferred: ServiceDefinitionTransformationType = config.preferredTransform,
+): ServiceDefinitionTransformationType? {
+    val finalType = if (this == ServiceDefinitionTransformationType.Auto) {
+        if (preferred == ServiceDefinitionTransformationType.Auto) config.preferredTransform else preferred
+    } else this
+    return finalType.takeUnless { it == ServiceDefinitionTransformationType.Auto }
+}
 
-    fun canUse(
-        config: SynapseConfig,
-        preferred: ServiceDefinitionTransformationType = config.preferredTransform,
-        native: Boolean = true,
-        catalyst: Boolean = config.catalyst.enabled,
-    ): Boolean {
-        val finalType = distill(config, preferred)
-        return when (finalType) {
-            Native -> {
-                native
-            }
-
-            Catalyst -> {
-                catalyst && config.catalyst.enabled
-            }
-
-            else -> false
-        }
-    }
-
-    companion object {
-        fun fromString(value: String): ServiceDefinitionTransformationType {
-            return entries.firstOrNull { it.name.equals(value, ignoreCase = true) }
-                ?: Auto
-        }
-    }
+fun ServiceDefinitionTransformationType.canUse(
+    config: SynapseConfig,
+    preferred: ServiceDefinitionTransformationType = config.preferredTransform,
+    native: Boolean = true,
+    catalyst: Boolean = config.catalyst.enabled,
+): Boolean = when (distill(config, preferred)) {
+    ServiceDefinitionTransformationType.Native -> native
+    ServiceDefinitionTransformationType.Catalyst -> catalyst && config.catalyst.enabled
+    else -> false
 }

@@ -6,6 +6,8 @@ import cloud.mallne.dicentra.synapse.model.dto.ServiceBundle.Companion.buildBund
 import cloud.mallne.dicentra.synapse.service.CatalystGenerator
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionGroupRule
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionTransformationType
+import cloud.mallne.dicentra.synapse.statics.canUse
+import cloud.mallne.dicentra.synapse.statics.distill
 import io.ktor.openapi.*
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone

@@ -1,5 +1,7 @@
 package cloud.mallne.dicentra.synapse.routes
 
+import cloud.mallne.dicentra.aviator.plugin.synapse.SynapseUser
+
 import cloud.mallne.dicentra.aviator.core.AviatorExtensionSpec.`x-dicentra-aviator-serviceDelegateCall`
 import cloud.mallne.dicentra.aviator.core.ServiceMethods
 import cloud.mallne.dicentra.aviator.model.ServiceLocator
@@ -50,7 +52,7 @@ fun Application.user() {
                     ServiceLocator("${config.server.baseLocator}User", ServiceMethods.GATHER)
                 responses {
                     HttpStatusCode.OK {
-                        schema = jsonSchema<User.UserDTO>()
+                        schema = jsonSchema<SynapseUser>()
                     }
                     HttpStatusCode.Unauthorized {
                         ContentType.Text.Plain()

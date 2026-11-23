@@ -1,6 +1,7 @@
 package cloud.mallne.dicentra.synapse.model
 
 import cloud.mallne.dicentra.synapse.statics.ServiceDefinitionTransformationType
+import cloud.mallne.dicentra.synapse.statics.canUse
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.io.encoding.Base64

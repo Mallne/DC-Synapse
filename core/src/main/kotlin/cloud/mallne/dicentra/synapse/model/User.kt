@@ -2,6 +2,9 @@ package cloud.mallne.dicentra.synapse.model
 
 import cloud.mallne.dicentra.synapse.service.ScopeService
 import cloud.mallne.dicentra.synapse.service.ScopeService.Companion.Types
+import cloud.mallne.dicentra.aviator.plugin.synapse.SynapseAccessLevels
+import cloud.mallne.dicentra.aviator.plugin.synapse.SynapseScopeType
+import cloud.mallne.dicentra.aviator.plugin.synapse.SynapseUser
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
@@ -47,27 +50,15 @@ data class User(
         return scopes.any { scopeName == it.key }
     }
 
-    fun toDTO() = UserDTO(
+    fun toDTO() = SynapseUser(
         name = name,
         email = email,
         username = username,
         locked = locked,
-        access = access,
-        scopes = scopes,
-        userScope = userScope,
+        access = SynapseAccessLevels(access.user, access.superAdmin),
+        scopes = scopes.mapValues { SynapseScopeType.valueOf(it.value.name) },
+        userScope = userScope.first to SynapseScopeType.valueOf(userScope.second.name),
         valid = valid
-    )
-
-    @Serializable
-    data class UserDTO(
-        val name: String,
-        val email: String,
-        val username: String,
-        val locked: Boolean = false,
-        val access: AccessLevels,
-        val scopes: Map<String, Types> = mapOf(),
-        val userScope: Pair<String, Types> = "user:$username" to Types.USER,
-        val valid: Boolean = !locked && access.user,
     )
 
     @Serializable

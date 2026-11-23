@@ -1,5 +1,7 @@
 package cloud.mallne.dicentra.synapse.model
 
+import cloud.mallne.dicentra.aviator.plugin.synapse.SynapseUser
+
 import cloud.mallne.dicentra.synapse.statics.ResponseObject
 import io.ktor.openapi.*
 import kotlinx.serialization.Serializable
@@ -7,6 +9,6 @@ import kotlinx.serialization.Serializable
 @Serializable
 @ResponseObject
 data class DiscoveryResponse(
-    val principal: User.UserDTO? = null,
+    val principal: SynapseUser? = null,
     val services: List<OpenApiDoc>,
 )
