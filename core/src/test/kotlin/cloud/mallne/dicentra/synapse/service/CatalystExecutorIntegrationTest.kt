@@ -16,6 +16,18 @@ import cloud.mallne.dicentra.aviator.core.plugins.BasicPluginActivationScope
 import cloud.mallne.dicentra.aviator.model.AviatorServiceUtils
 import cloud.mallne.dicentra.aviator.model.ServiceLocator
 import cloud.mallne.dicentra.aviator.client.ktor.KtorAviatorServiceConverter
+import cloud.mallne.dicentra.aviator.client.ktor.KtorEngineDefinitionConverter
+import cloud.mallne.dicentra.aviator.client.ktor.invoke
+import cloud.mallne.dicentra.aviator.core.engine.AviatorEngine
+import cloud.mallne.dicentra.aviator.core.engine.EngineAuthorizationDecision
+import cloud.mallne.dicentra.aviator.core.engine.EngineDefinitionAuthorization
+import cloud.mallne.dicentra.aviator.core.engine.InMemoryDefinitionCoordinator
+import cloud.mallne.dicentra.aviator.core.engine.OpenApiClientInput
+import cloud.mallne.dicentra.aviator.core.engine.OutboundTargetPolicy
+import cloud.mallne.dicentra.aviator.orchestration.model.ExecutionOutcome
+import cloud.mallne.dicentra.aviator.orchestration.plugin.OrchestrationPluginExecutor
+import cloud.mallne.dicentra.aviator.orchestration.plugin.OrchestrationStage
+import cloud.mallne.dicentra.aviator.orchestration.plugin.installOrchestrationPlugins
 import cloud.mallne.dicentra.aviator.plugin.adapter.json.JsonAdapter
 import cloud.mallne.dicentra.aviator.plugin.adapter.xml.XmlAdapter
 import cloud.mallne.dicentra.aviator.plugin.synapse.CatalystRequest
@@ -49,6 +61,9 @@ import cloud.mallne.dicentra.aviator.koas.typed.Constraints
 import cloud.mallne.dicentra.aviator.koas.typed.NamingContext
 import io.ktor.openapi.ReferenceOr.Value
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.async
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withTimeout
 import java.net.InetAddress
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -58,9 +73,133 @@ import kotlinx.serialization.builtins.serializer
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 
 class CatalystExecutorIntegrationTest {
     private val locator = ServiceLocator("parcels", ServiceMethods.GATHER)
+
+    @Test
+    fun `workflow stops when cumulative provider responses exceed the aggregate limit`(): Unit = runBlocking {
+        var calls = 0
+        val client = HttpClient(MockEngine {
+            calls++
+            respond("\"${"x".repeat(80)}\"", headers = headersOf(HttpHeaders.ContentType, "application/json"))
+        })
+        val executor = CatalystExecutor(listOf(JsonAdapterCatalystContribution()), client = client,
+            maxAggregateResponseBytes = 150,
+            allowedHosts = listOf("provider-a.example"), resolveProviderHost = ::publicTestResolution)
+        val document = Json.parseToJsonElement(
+            """{"arazzo":"1.1.0","info":{"title":"test","version":"1"},"sourceDescriptions":[{"name":"api","url":"urn:synapse:service:a","type":"openapi"}],"workflows":[{"workflowId":"wf","steps":[{"stepId":"one","operationId":"${'$'}sourceDescriptions.api.GetParcels"},{"stepId":"two","operationId":"${'$'}sourceDescriptions.api.GetParcels"},{"stepId":"three","operationId":"${'$'}sourceDescriptions.api.GetParcels"}]}]}""",
+        )
+        try {
+            assertFailsWith<CatalystAggregateLimitException> {
+                executor.executeWorkflow(StoredWorkflow("wf-doc", null, document), "wf",
+                    listOf(action("a", "provider-a.example").service), Json.parseToJsonElement("{}"))
+            }
+            assertEquals(2, calls)
+        } finally {
+            executor.close()
+        }
+    }
+
+    @Test
+    fun `stored workflow runs every step through the shared engine and maps real responses`(): Unit = runBlocking {
+        var calls = 0
+        var prepared = false
+        val client = HttpClient(MockEngine {
+            calls++
+            respond("{\"value\":$calls}", headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
+        })
+        val executor = CatalystExecutor(listOf(JsonAdapterCatalystContribution()), client = client,
+            allowedHosts = listOf("provider-a.example"), resolveProviderHost = ::publicTestResolution,
+            orchestrationPlugins = installOrchestrationPlugins {
+                install("test:workflow") {
+                    stages += OrchestrationStage.PREPARE
+                    executor = OrchestrationPluginExecutor { prepared = true }
+                }
+            })
+        val document = Json.parseToJsonElement(
+            """{"arazzo":"1.1.0","info":{"title":"test","version":"1"},"sourceDescriptions":[{"name":"api","url":"urn:synapse:service:a","type":"openapi"}],"workflows":[{"workflowId":"wf","steps":[{"stepId":"one","operationId":"${'$'}sourceDescriptions.api.GetParcels"},{"stepId":"two","operationId":"${'$'}sourceDescriptions.api.GetParcels","outputs":{"value":"${'$'}response.body#/value"}}],"outputs":{"answer":"${'$'}steps.two.outputs.value"}}]}""",
+        )
+        try {
+            val result = executor.executeWorkflow(StoredWorkflow("wf-doc", "tenant", document), "wf",
+                listOf(action("a", "provider-a.example").service), Json.parseToJsonElement("{}"))
+            assertEquals("{\"answer\":2}", assertIs<ExecutionOutcome.Succeeded>(result.outcome).outputs)
+            assertEquals(2, calls)
+            assertEquals(true, prepared)
+        } finally {
+            executor.close()
+        }
+    }
+
+    @Test
+    fun `workflow referencing an invisible provider fails before any request`(): Unit = runBlocking {
+        var calls = 0
+        val executor = CatalystExecutor(listOf(JsonAdapterCatalystContribution()), client = HttpClient(MockEngine {
+            calls++
+            respond("{}")
+        }), allowedHosts = listOf("provider-a.example"), resolveProviderHost = ::publicTestResolution)
+        val document = Json.parseToJsonElement(
+            """{"arazzo":"1.1.0","info":{"title":"test","version":"1"},"sourceDescriptions":[{"name":"api","url":"urn:synapse:service:hidden","type":"openapi"}],"workflows":[{"workflowId":"wf","steps":[{"stepId":"one","operationId":"${'$'}sourceDescriptions.api.GetParcels"}]}]}""",
+        )
+        try {
+            assertFailsWith<IllegalArgumentException> {
+                executor.executeWorkflow(StoredWorkflow("wf-doc", "tenant", document), "wf",
+                    listOf(action("a", "provider-a.example").service), Json.parseToJsonElement("{}"))
+            }
+            assertEquals(0, calls)
+        } finally {
+            executor.close()
+        }
+    }
+
+    @Test
+    fun `workflow maps previous response output into the next provider parameter`(): Unit = runBlocking {
+        val queries = mutableListOf<String?>()
+        val client = HttpClient(MockEngine { request ->
+            queries += request.url.parameters["key"]
+            respond("{\"value\":\"mapped\"}", headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
+        })
+        val executor = CatalystExecutor(listOf(JsonAdapterCatalystContribution()), client = client,
+            allowedHosts = listOf("provider-a.example"), resolveProviderHost = ::publicTestResolution)
+        val document = Json.parseToJsonElement(
+            """{"arazzo":"1.1.0","info":{"title":"test","version":"1"},"sourceDescriptions":[{"name":"api","url":"urn:synapse:service:a","type":"openapi"}],"workflows":[{"workflowId":"wf","steps":[{"stepId":"one","operationId":"${'$'}sourceDescriptions.api.GetParcels","outputs":{"value":"${'$'}response.body#/value"}},{"stepId":"two","operationId":"${'$'}sourceDescriptions.api.GetParcels","parameters":[{"name":"key","in":"query","value":"${'$'}steps.one.outputs.value"}]}]}]}""",
+        )
+        try {
+            val result = executor.executeWorkflow(StoredWorkflow("wf-doc", null, document), "wf",
+                listOf(action("a", "provider-a.example", defaultQuery = "key" to "default").service),
+                Json.parseToJsonElement("{}"))
+            assertIs<ExecutionOutcome.Succeeded>(result.outcome)
+            assertEquals<List<String?>>(listOf("default", "mapped"), queries)
+        } finally {
+            executor.close()
+        }
+    }
+
+    @Test
+    fun `overlapping engine invocations keep their selected providers isolated`(): Unit = runBlocking {
+        val bothStarted = CompletableDeferred<Unit>()
+        val started = java.util.concurrent.atomic.AtomicInteger()
+        val client = HttpClient(MockEngine { request ->
+            if (started.incrementAndGet() == 2) bothStarted.complete(Unit)
+            withTimeout(5_000) { bothStarted.await() }
+            respond("\"${request.url.host}\"", headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
+        })
+        val executor = CatalystExecutor(
+            listOf(JsonAdapterCatalystContribution()),
+            client = client,
+            allowedHosts = listOf("provider-a.example", "provider-b.example"),
+            resolveProviderHost = ::publicTestResolution,
+        )
+        try {
+            val first = async { executor.execute(listOf(action("a", "provider-a.example")), CatalystRequest()) }
+            val second = async { executor.execute(listOf(action("b", "provider-b.example")), CatalystRequest()) }
+            assertEquals("[\"provider-a.example\"]", first.await().toString())
+            assertEquals("[\"provider-b.example\"]", second.await().toString())
+        } finally {
+            executor.close()
+        }
+    }
 
     @Test
     fun `required logical inputs are validated before Weaver dispatches native query names`(): Unit = runBlocking {
@@ -510,21 +649,29 @@ class CatalystExecutorIntegrationTest {
         )
         val generatedPath = generator.generateFor(source.route)
         val gatewayDefinition = generator.generateWrapper(listOf(generatedPath))
-        val gatewayService = KtorAviatorServiceConverter(client, Json).build(gatewayDefinition) {
+        val definitions = KtorEngineDefinitionConverter(KtorAviatorServiceConverter(client, Json)).convert(gatewayDefinition) {
             // Installed inactive on purpose; generated per-operation materialization should activate it.
             add(SynapsePlugin.install { })
             add(JsonAdapter.install { })
-        }.single()
-        assertEquals(true, gatewayService.plugins.filterIsInstance<SynapsePluginInstance>().single().configurationBundle.active)
+        }
+        assertEquals(true, definitions.single().service.plugins.filterIsInstance<SynapsePluginInstance>().single().configurationBundle.active)
+        val engine = AviatorEngine(
+            coordinator = InMemoryDefinitionCoordinator(definitions),
+            authorization = EngineDefinitionAuthorization { EngineAuthorizationDecision.Allowed },
+            outboundTargetPolicy = OutboundTargetPolicy { _, _, _ -> null },
+        )
 
         try {
-            val result = gatewayService.requestContextful<JsonElement, NoBody>(
-                requestParams = RequestParameters(
-                    mutableMapOf(
-                        "enabled" to RequestParameter.Single(true, valueSerializer = Boolean.serializer()),
+            val result = engine.invoke<JsonElement>(
+                locator,
+                OpenApiClientInput<NoBody>(
+                    parameters = RequestParameters(
+                        mutableMapOf(
+                            "enabled" to RequestParameter.Single(true, valueSerializer = Boolean.serializer()),
+                        ),
                     ),
                 ),
-            ).result
+            ).single().result.getOrThrow().result
 
             assertEquals("/catalyst/${CatalystActionSelector.encode(locator)}", invokedPath)
             assertEquals(io.ktor.http.HttpMethod.Post, invokedMethod)

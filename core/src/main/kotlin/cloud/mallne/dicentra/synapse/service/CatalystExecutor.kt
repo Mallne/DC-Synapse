@@ -1,24 +1,45 @@
 package cloud.mallne.dicentra.synapse.service
 
 import cloud.mallne.dicentra.aviator.client.ktor.KtorAviatorServiceConverter
+import cloud.mallne.dicentra.aviator.client.ktor.KtorClientDefinition
+import cloud.mallne.dicentra.aviator.client.ktor.KtorEngineDefinitionConverter
+import cloud.mallne.dicentra.aviator.client.ktor.ktorEngineTemplateWithBody
 import cloud.mallne.dicentra.aviator.core.AviatorExtensionSpec.`x-dicentra-aviator-pluginMaterialization`
 import cloud.mallne.dicentra.aviator.core.NoBody
+import cloud.mallne.dicentra.aviator.core.engine.*
 import cloud.mallne.dicentra.aviator.core.execution.AviatorExecutionContext
 import cloud.mallne.dicentra.aviator.core.execution.RequestParameters
 import cloud.mallne.dicentra.aviator.core.io.RawRequestBody
 import cloud.mallne.dicentra.aviator.core.plugins.AviatorPluginInstance
 import cloud.mallne.dicentra.aviator.core.plugins.BasicPluginActivationScope
+import cloud.mallne.dicentra.aviator.core.plugins.AviatorPluginRegistry
 import cloud.mallne.dicentra.aviator.plugin.synapse.CatalystParameterCodecs
 import cloud.mallne.dicentra.aviator.plugin.synapse.CatalystRequest
 import cloud.mallne.dicentra.aviator.plugin.synapse.CatalystResultEncoder
 import cloud.mallne.dicentra.aviator.plugin.synapse.toRequestParameters
+import cloud.mallne.dicentra.aviator.plugin.synapse.CatalystParameterValue
+import cloud.mallne.dicentra.aviator.orchestration.arazzo.execution.*
+import cloud.mallne.dicentra.aviator.orchestration.arazzo.validation.ArazzoValidationResult
+import cloud.mallne.dicentra.aviator.orchestration.arazzo.validation.ArazzoValidator
+import cloud.mallne.dicentra.aviator.orchestration.model.*
+import cloud.mallne.dicentra.aviator.orchestration.policy.*
+import cloud.mallne.dicentra.aviator.orchestration.plugin.OrchestrationPluginRegistry
+import cloud.mallne.dicentra.synapse.model.dto.APIServiceDTO
 import io.ktor.client.*
 import io.ktor.client.engine.apache5.*
+import io.ktor.http.ContentType
 import kotlinx.coroutines.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.jsonObject
 import java.net.InetAddress
+import java.security.MessageDigest
+import java.util.UUID
+import kotlin.coroutines.AbstractCoroutineContextElement
+import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration.Companion.milliseconds
 
 /** Executes selected authorized original Aviator actions outside the database transaction. */
@@ -36,6 +57,10 @@ class CatalystExecutor(
     allowedHosts: List<String> = emptyList(),
     private val allowPublicServiceHosts: Boolean = false,
     resolveProviderHost: (String) -> List<InetAddress> = { InetAddress.getAllByName(it).toList() },
+    enginePlugins: AviatorPluginRegistry = AviatorPluginRegistry.Empty,
+    private val orchestrationPlugins: OrchestrationPluginRegistry = OrchestrationPluginRegistry.Empty,
+    private val resolveWorkflowSource: (String, List<APIServiceDTO>) -> String? = { _, _ -> null },
+    private val workflowParameterAliases: (ResolvedCatalystAction) -> Map<String, String> = { emptyMap() },
 ) : AutoCloseable {
     private val providersByIdentity = contributions.groupBy { it.identity }
     private val outboundPolicy = CatalystOutboundPolicy(allowedHosts, resolveProviderHost)
@@ -45,6 +70,41 @@ class CatalystExecutor(
             dnsResolver = CatalystDnsResolver(outboundPolicy)
         }
     }
+    private val converter = KtorAviatorServiceConverter(this.client, json, maxResponseBytes)
+    private val definitionConverter = KtorEngineDefinitionConverter(converter)
+    private class InvocationDefinition(
+        val definition: KtorClientDefinition,
+        val allowPublicHosts: Boolean,
+    ) : AbstractCoroutineContextElement(Key) {
+        companion object Key : CoroutineContext.Key<InvocationDefinition>
+    }
+    private val engine = AviatorEngine(
+        coordinator = { locator ->
+            currentCoroutineContext()[InvocationDefinition]?.definition
+                ?.takeIf { it.locator == locator }?.let(::listOf).orEmpty()
+        },
+        authorization = { context ->
+            if (currentCoroutineContext()[InvocationDefinition]?.definition === context.definition) {
+                EngineAuthorizationDecision.Allowed
+            } else {
+                EngineAuthorizationDecision.Denied("Action was not authorized by Catalyst")
+            }
+        },
+        outboundTargetPolicy = { _, definition, targets ->
+            val invocation = currentCoroutineContext()[InvocationDefinition]
+            if (invocation == null || invocation.definition !== definition) {
+                "Action was not authorized by Catalyst"
+            } else {
+                try {
+                    outboundPolicy.validate(targets, invocation.allowPublicHosts)
+                    null
+                } catch (cause: IllegalArgumentException) {
+                    throw CatalystOutboundPolicyException(cause)
+                }
+            }
+        },
+        plugins = enginePlugins,
+    )
     private val fanout = CatalystFanout(
         maxTargets = maxTargets,
         maxConcurrentTargets = maxConcurrentTargets,
@@ -105,6 +165,141 @@ class CatalystExecutor(
             val target = prepared.first { it.first == action }.second
             executeOne(action, request, target.pluginInstances, target.parameters, target.serializedBody)
         }
+    }
+
+    /**
+     * Execute a stored document against a caller-visible service snapshot. Source identities and
+     * all operation references are resolved before any step runs; no source URL is fetched.
+     */
+    suspend fun executeWorkflow(
+        stored: StoredWorkflow,
+        workflowId: String,
+        visibleServices: List<APIServiceDTO>,
+        inputs: JsonElement,
+    ): ExecutionResult {
+        val validation = ArazzoValidator.parseAndValidate(stored.document.toString())
+        require(validation is ArazzoValidationResult.Valid) { "Stored workflow is not executable" }
+        val document = validation.document
+        val workflow = requireNotNull(document.workflows.singleOrNull { it.workflowId == workflowId }) {
+            "Workflow not found"
+        }
+        require(workflow.steps.size <= maxTargets) { "Workflow exceeds configured step limit" }
+        val selected = WorkflowOperationIndex(document, visibleServices, resolveWorkflowSource).preflight(workflow)
+        val allowed = selected.values.map { it.first }.toSet()
+        var aggregateBytes = 0L
+        var aggregateLimitExceeded = false
+        val policy = CapabilityPolicy(
+            ExecutionStrategy.AGGREGATE, ConstituentOrdering.RESOLUTION,
+            PartialFailurePolicy.REQUIRE_ALL, EmptySelectionPolicy.FAIL,
+        )
+        val steps = ArazzoEngineStepExecutor(engine, policy) { step, mapped ->
+            val (identity, action) = selected.getValue(step.stepId)
+            val (parameters, body) = workflowParameters(
+                hasParameters = step.parameters.isNotEmpty(),
+                hasRequestBody = step.requestBody != null,
+                mapped = mapped,
+                action = action,
+            )
+            val activation = BasicPluginActivationScope().apply { materializePlugins(action).forEach(::add) }
+            val definition = definitionConverter.convert(action.service.serviceDefinition) {
+                activation.registry.forEach(::add)
+            }.single { it.locator == action.locator && it.service.route.method == action.route.method && it.service.route.path == action.route.path }
+            ArazzoEngineActionResolution.Resolved(ArazzoEngineAction(action.locator, identity) { sharedEngine ->
+                withContext(InvocationDefinition(definition, allowPublicServiceHosts && action.service.scope == null)) {
+                    val template = ktorEngineTemplateWithBody<JsonElement, JsonElement>()
+                    val responseTemplate = object : EngineTemplate<OpenApiClientInput<JsonElement>, cloud.mallne.dicentra.aviator.client.ktor.KtorExecutionContext<JsonElement, JsonElement>> by template {
+                        override fun classifyFailure(output: cloud.mallne.dicentra.aviator.client.ktor.KtorExecutionContext<JsonElement, JsonElement>): Exception? = null
+                    }
+                    val execution = withTimeout(perTargetTimeoutMillis.milliseconds) {
+                        sharedEngine.invoke(action.locator, responseTemplate, OpenApiClientInput(body = body, parameters = parameters))
+                            .single().result.getOrThrow()
+                    }
+                    val response = execution.networkChain.lastOrNull { it.response != null }?.response
+                        ?: return@withContext null
+                    val sourceBody = response.content?.let { bytes ->
+                        when {
+                            bytes.isEmpty() -> BodyValue.Empty
+                            response.contentType.withoutParameters().match(ContentType.Application.Json) ->
+                                try {
+                                    BodyValue.JsonValue(json.parseToJsonElement(bytes.decodeToString()))
+                                } catch (_: IllegalArgumentException) {
+                                    BodyValue.DecodeFailure(ExecutionFailure("invalid_json", "Provider response is not valid JSON"))
+                                }
+                            else -> BodyValue.BytesValue(bytes.toList())
+                        }
+                    } ?: BodyValue.Unavailable
+                    val result = contextAsAny(execution).result?.let {
+                        BodyValue.JsonValue(encodeFinalResult(it, action.route.`x-dicentra-aviator-pluginMaterialization`.orEmpty().keys))
+                    } ?: sourceBody
+                    val resultBytes = when (result) {
+                        is BodyValue.JsonValue -> result.value.toString().encodeToByteArray().size.toLong()
+                        is BodyValue.BytesValue -> result.bytes.size.toLong()
+                        else -> 0L
+                    }
+                    aggregateBytes += maxOf(response.content?.size?.toLong() ?: 0L, resultBytes)
+                    if (aggregateBytes > maxAggregateResponseBytes) {
+                        aggregateLimitExceeded = true
+                        throw CatalystAggregateLimitException()
+                    }
+                    CapabilityResult(action.locator, CapabilityOutcome.Succeeded(result), listOf(
+                        ConstituentResult(identity, ConstituentOutcome.Succeeded(result),
+                            ResponseSnapshot(sourceBody, response.contentType.toString(),
+                                HttpResponseMetadata(response.status.value, response.headers.values.toStringList()))),
+                    ))
+                }
+            })
+        }
+        val runner = ArazzoRunExecutor(steps, plugins = orchestrationPlugins, authorize = { identity ->
+            if (identity in allowed) null else ExecutionFailure("unauthorized", "Operation is not available")
+        })
+        val revision = MessageDigest.getInstance("SHA-256").digest(stored.document.toString().encodeToByteArray())
+            .joinToString("") { "%02x".format(it) }
+        val result = withTimeout(overallTimeoutMillis.milliseconds) {
+            runner.execute(workflow, WorkflowIdentity("arazzo", document.arazzo, stored.id, revision),
+                RunId(UUID.randomUUID().toString()), inputs.toString())
+        }
+        if (aggregateLimitExceeded ||
+            json.encodeToString(ExecutionResult.serializer(), result).encodeToByteArray().size.toLong() > maxAggregateResponseBytes
+        ) throw CatalystAggregateLimitException()
+        return result
+    }
+
+    private fun workflowParameters(
+        hasParameters: Boolean,
+        hasRequestBody: Boolean,
+        mapped: JsonElement,
+        action: ResolvedCatalystAction,
+    ): Pair<RequestParameters, JsonElement?> {
+        val groups = if (hasParameters) mapped.jsonObject["parameters"]?.jsonObject.orEmpty() else emptyMap()
+        val body = if (hasRequestBody) mapped.jsonObject["requestBody"] else null
+        CatalystInputBinder.validateBody(body, action.route, json)
+        val values = mutableMapOf<String, CatalystParameterValue>()
+        val aliases = workflowParameterAliases(action)
+        val usedAliases = mutableMapOf<String, String>()
+        groups.forEach { (location, group) ->
+            (group as JsonObject).forEach { (name, value) ->
+                val target = if (location.equals("query", ignoreCase = true)) aliases[name] ?: name else name
+                val declaration = action.route.input.singleOrNull {
+                    it.name == target && it.input.name.equals(location, ignoreCase = true)
+                } ?: throw IllegalArgumentException("Workflow parameter does not match the operation")
+                require(target !in values) { "Ambiguous workflow parameter name" }
+                val items = if (declaration.type is cloud.mallne.dicentra.aviator.koas.typed.Model.Collection.List) {
+                    (value as? JsonArray)?.toList() ?: throw IllegalArgumentException("Expected array parameter")
+                } else listOf(value)
+                values[target] = CatalystParameterValue(
+                    if (declaration.type is cloud.mallne.dicentra.aviator.koas.typed.Model.Collection.List)
+                        CatalystParameterValue.Cardinality.MULTI else CatalystParameterValue.Cardinality.SINGLE,
+                    items,
+                )
+                if (target != name) usedAliases[name] = target
+            }
+        }
+        val parameters = CatalystInputBinder.bind(CatalystRequest(typedParameters = values), action.route, json,
+            CatalystParameterCodecs(contributions.flatMap { it.parameterCodecs }), parameterContractsFor(action))
+        // Weaver consumes the logical names; the aliased values were validated against the
+        // provider's declared schema and are retained until its projection replaces the route.
+        usedAliases.forEach { (name, target) -> parameters[name] = parameters.getValue(target) }
+        return parameters to body
     }
 
     private data class PreparedCatalystAction(
@@ -258,26 +453,21 @@ class CatalystExecutor(
         parameters: RequestParameters,
         serializedBody: RawRequestBody?,
     ): JsonElement {
-        try {
-            outboundPolicy.validate(
-                action.service.serviceDefinition.servers.orEmpty().map { it.url },
-                allowServiceDefinitionHosts = allowPublicServiceHosts && action.service.scope == null,
-            )
-        } catch (cause: IllegalArgumentException) {
-            throw CatalystOutboundPolicyException(cause)
-        }
         val materializedIdentities = action.route.`x-dicentra-aviator-pluginMaterialization`.orEmpty().keys
         val activation = BasicPluginActivationScope().apply { pluginInstances.forEach(::add) }
-        val services = KtorAviatorServiceConverter(client, json, maxResponseBytes)
-            .build(action.service.serviceDefinition) { activation.registry.forEach(::add) }
-        val service = services.singleOrNull { it.serviceLocator == action.locator && it.route.method == action.route.method && it.route.path == action.route.path }
+        val definitions = definitionConverter.convert(action.service.serviceDefinition) { activation.registry.forEach(::add) }
+        val definition = definitions.singleOrNull {
+            it.locator == action.locator && it.service.route.method == action.route.method && it.service.route.path == action.route.path
+        }
             ?: throw IllegalArgumentException("Resolved action could not be constructed")
-        val context = if (serializedBody != null) {
-            service.requestContextful<JsonElement, RawRequestBody>(requestBody = serializedBody, requestParams = parameters)
-        } else if (request.body == null) {
-            service.requestContextful<JsonElement, NoBody>(requestParams = parameters)
-        } else {
-            service.requestContextful<JsonElement, JsonElement>(requestBody = request.body, requestParams = parameters)
+        val context = withContext(InvocationDefinition(definition, allowPublicServiceHosts && action.service.scope == null)) {
+            if (serializedBody != null) {
+                engine.invoke(action.locator, ktorEngineTemplateWithBody<JsonElement, RawRequestBody>(), OpenApiClientInput(body = serializedBody, parameters = parameters)).single().result.getOrThrow()
+            } else if (request.body == null) {
+                engine.invoke(action.locator, ktorEngineTemplateWithBody<JsonElement, NoBody>(), OpenApiClientInput(parameters = parameters)).single().result.getOrThrow()
+            } else {
+                engine.invoke(action.locator, ktorEngineTemplateWithBody<JsonElement, JsonElement>(), OpenApiClientInput(body = request.body, parameters = parameters)).single().result.getOrThrow()
+            }
         }
         val value = contextAsAny(context).result ?: throw CatalystUpstreamFailureException()
         return encodeFinalResult(value, materializedIdentities)
@@ -294,7 +484,10 @@ class CatalystExecutor(
             AviatorExecutionContext<@Serializable Any, @Serializable Any> =
         context as AviatorExecutionContext<@Serializable Any, @Serializable Any>
 
-    override fun close() = client.close()
+    override fun close() {
+        converter.httpClient.close()
+        client.close()
+    }
 }
 
 class MissingCatalystPluginException : RuntimeException()

@@ -1,6 +1,7 @@
 package cloud.mallne.dicentra.synapse.model
 
 import cloud.mallne.dicentra.aviator.plugin.synapse.SynapseUser
+import cloud.mallne.dicentra.synapse.service.StoredWorkflow
 
 import cloud.mallne.dicentra.synapse.statics.ResponseObject
 import io.ktor.openapi.*
@@ -11,4 +12,5 @@ import kotlinx.serialization.Serializable
 data class DiscoveryResponse(
     val principal: SynapseUser? = null,
     val services: List<OpenApiDoc>,
+    val workflows: List<StoredWorkflow> = emptyList(),
 )

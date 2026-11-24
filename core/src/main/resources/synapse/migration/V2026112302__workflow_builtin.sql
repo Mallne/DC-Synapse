@@ -1,0 +1,1 @@
+ALTER TABLE synapse_workflows ADD COLUMN builtin BOOLEAN NOT NULL DEFAULT FALSE;

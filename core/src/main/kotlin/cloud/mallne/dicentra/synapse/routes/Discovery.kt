@@ -63,11 +63,13 @@ fun Application.discovery() {
     val discoveryGenerator by inject<DiscoveryGenerator>()
     val config = environment.config.getAs<SynapseConfig>()
     val scopeService by inject<ScopeService>()
+    val workflowDB by inject<WorkflowDBService>()
     val db by inject<DatabaseService>()
     routing {
         authenticate(optional = true) {
             get("/services") {
                 val user: User? = call.authentication.principal()
+                if (user != null && !user.valid) return@get call.respond(HttpStatusCode.NotFound)
                 db {
                     user?.attachScopes(scopeService)
                     val services = apiService.readPublic().toMutableList()
@@ -91,9 +93,11 @@ fun Application.discovery() {
                         requestedRule = groupRule,
                         catalystGenerator = catalystGenerator,
                     ) + thisServer
+                    val visibleWorkflows = workflowDB.listVisible(user?.scopes?.keys.orEmpty())
                     val response = DiscoveryResponse(
                         user?.toDTO(),
                         definitions,
+                        visibleWorkflows,
                     )
                     call.respond(response)
                 }

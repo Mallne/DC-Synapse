@@ -27,6 +27,9 @@ class CatalystOutboundPolicyTest {
         policy.validate(listOf("https://$host/geoproxy/services/adv_alkis_wfs"), allowServiceDefinitionHosts = true)
         policy.resolvePublicHost(host)
         assertFailsWith<IllegalArgumentException> {
+            policy.validate(listOf("https://$host/scoped-service"))
+        }
+        assertFailsWith<IllegalArgumentException> {
             policy.validate(listOf("http://other.example/provider"), allowServiceDefinitionHosts = true)
         }
     }

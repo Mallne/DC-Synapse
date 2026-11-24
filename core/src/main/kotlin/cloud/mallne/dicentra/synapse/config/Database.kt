@@ -4,6 +4,7 @@ import cloud.mallne.dicentra.synapse.model.SynapseConfig
 import cloud.mallne.dicentra.synapse.service.APIDBService
 import cloud.mallne.dicentra.synapse.service.DatabaseService
 import cloud.mallne.dicentra.synapse.service.ScopeService
+import cloud.mallne.dicentra.synapse.service.WorkflowDBService
 import io.ktor.server.application.*
 import io.ktor.server.config.*
 import kotlinx.coroutines.launch
@@ -25,14 +26,13 @@ fun Application.configureDatabase(vararg tables: Table = arrayOf(APIDBService.AP
         if (config.data.autoCreateDelta) {
             log.info("Attempting to create a migration script")
             databaseService {
-                val created = migration(config = config, tables = tables)
+                val created = migration(config = config, tables = tables.filterNot { it == WorkflowDBService.Workflows }.toTypedArray())
                 log.info("Created Migration script {}", created.absolutePath)
             }
             this@configureDatabase.engine.stop()
         }
         log.info("Applying migration script")
-        val result = flyway(config)
-        log.info(result.toString())
+        flyway(config).forEach { log.info(it.toString()) }
     }
 }
 
@@ -49,11 +49,38 @@ private suspend fun migration(config: SynapseConfig, vararg tables: Table): File
     return created
 }
 
-private fun flyway(config: SynapseConfig): MigrateResult =
-    Flyway.configure()
+internal fun flyway(config: SynapseConfig): List<MigrateResult> {
+    // Older builds recorded the bundled migrations in the host history. Keep using that
+    // history for those databases rather than rewriting applied migration records or data.
+    val legacy = Flyway.configure()
+        .defaultSchema(config.data.schema)
+        .dataSource("jdbc:${config.data.url}", config.data.user, config.data.password)
+        .locations(*(config.data.migrations + "classpath:synapse/migration").distinct().toTypedArray())
+        .callbackLocations(*config.data.callbacks.toTypedArray())
+        .outOfOrder(true)
+        .load()
+    val legacyScripts = setOf(
+        "V2026112301__create_workflows.sql",
+        "V2026112302__workflow_builtin.sql",
+    )
+    if (legacy.info().applied().any { it.script in legacyScripts }) {
+        return listOf(legacy.migrate())
+    }
+    val host = Flyway.configure()
         .defaultSchema(config.data.schema)
         .dataSource("jdbc:${config.data.url}", config.data.user, config.data.password)
         .locations(*config.data.migrations.toTypedArray())
         .callbackLocations(*config.data.callbacks.toTypedArray())
         .load()
         .migrate()
+    val workflows = Flyway.configure()
+        .defaultSchema(config.data.schema)
+        .dataSource("jdbc:${config.data.url}", config.data.user, config.data.password)
+        .table("synapse_workflow_schema_history")
+        .baselineOnMigrate(true)
+        .baselineVersion("0")
+        .locations("classpath:synapse/migration")
+        .load()
+        .migrate()
+    return listOf(host, workflows)
+}

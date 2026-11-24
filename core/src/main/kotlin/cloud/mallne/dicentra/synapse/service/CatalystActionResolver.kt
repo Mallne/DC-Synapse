@@ -37,7 +37,7 @@ class CatalystActionResolver {
             .toList()
     }
 
-    private fun isCatalystWrapper(route: Route): Boolean {
+    internal fun isCatalystWrapper(route: Route): Boolean {
         val materialization = route.`x-dicentra-aviator-pluginMaterialization`
             ?: return false
         return SynapsePlugin.identity in materialization

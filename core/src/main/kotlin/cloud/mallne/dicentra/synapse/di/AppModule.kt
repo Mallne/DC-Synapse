@@ -11,8 +11,13 @@ import cloud.mallne.dicentra.synapse.model.SynapseConfig
 import cloud.mallne.dicentra.synapse.service.CatalystPluginContribution
 import cloud.mallne.dicentra.synapse.service.JsonAdapterCatalystContribution
 import cloud.mallne.dicentra.synapse.service.XmlAdapterCatalystContribution
+import cloud.mallne.dicentra.synapse.service.SynapsePluginBundle
+import cloud.mallne.dicentra.synapse.service.WorkflowDBService
+import cloud.mallne.dicentra.aviator.core.plugins.aviatorPluginRegistry
+import cloud.mallne.dicentra.aviator.orchestration.plugin.installOrchestrationPlugins
 import cloud.mallne.dicentra.aviator.plugin.adapter.json.JsonAdapter
 import cloud.mallne.dicentra.aviator.plugin.adapter.xml.XmlAdapter
+import cloud.mallne.dicentra.synapse.service.CatalystActionFilter
 import cloud.mallne.dicentra.synapse.statics.Serialization
 import org.koin.core.annotation.ComponentScan
 import org.koin.core.annotation.Module
@@ -35,14 +40,26 @@ val DI = module {
     factoryOf(::DatabaseService)
     singleOf(::DiscoveryGenerator)
     singleOf(::ScopeService)
+    singleOf(::WorkflowDBService)
     single { Serialization() }
     single<CatalystPluginContribution>(named(JsonAdapter.identity)) { JsonAdapterCatalystContribution() }
     single<CatalystPluginContribution>(named(XmlAdapter.identity)) { XmlAdapterCatalystContribution() }
     single {
         val limits = get<SynapseConfig>().catalyst
+        val bundles = getAll<SynapsePluginBundle>()
         CatalystExecutor(
-            contributions = getAll(),
-            filters = getAll(),
+            contributions = getAll<CatalystPluginContribution>() + bundles.flatMap { it.catalystPlugins },
+            filters = getAll<CatalystActionFilter>() + bundles.flatMap { it.actionFilters },
+            enginePlugins = aviatorPluginRegistry { bundles.forEach { it.configureEngine(this) } },
+            orchestrationPlugins = installOrchestrationPlugins { bundles.forEach { it.configureOrchestration(this) } },
+            resolveWorkflowSource = { source, services ->
+                bundles.mapNotNull { it.resolveWorkflowSource(source, services) }.distinct().singleOrNull()
+            },
+            workflowParameterAliases = { action ->
+                val aliases = bundles.flatMap { it.workflowParameterAliases(action).entries }
+                require(aliases.map { it.key }.distinct().size == aliases.size) { "Duplicate workflow parameter alias" }
+                aliases.associate { it.key to it.value }
+            },
             maxTargets = limits.maxTargets,
             maxConcurrentTargets = limits.maxConcurrentTargets,
             perTargetTimeoutMillis = limits.perTargetTimeoutMillis,

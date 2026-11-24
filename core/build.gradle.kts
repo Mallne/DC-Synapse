@@ -75,6 +75,8 @@ dependencies {
     api(libs.dc.aviator.plugin.weaver)
     api(libs.dc.aviator.plugin.synapse)
     api(libs.dc.aviator.plugin.otel)
+    implementation(libs.dc.aviator.arazzo)
+    api(libs.dc.aviator.orchestration.core)
     api(libs.dc.polyfill)
 
     testImplementation(kotlin("test"))

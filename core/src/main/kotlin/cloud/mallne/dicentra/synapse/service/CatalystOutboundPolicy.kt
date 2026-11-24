@@ -10,12 +10,13 @@ internal class CatalystOutboundPolicy(
     allowedHosts: List<String>,
     private val resolveHost: (String) -> List<InetAddress> = { InetAddress.getAllByName(it).toList() },
 ) {
+    private val configuredHosts = allowedHosts.map(::normalizeHost).toSet()
     private val approvedHosts = ConcurrentHashMap.newKeySet<String>().apply {
-        addAll(allowedHosts.map(::normalizeHost))
+        addAll(configuredHosts)
     }
 
     init {
-        require(approvedHosts.size == allowedHosts.size) { "Catalyst allowed_hosts contains duplicate hosts" }
+        require(configuredHosts.size == allowedHosts.size) { "Catalyst allowed_hosts contains duplicate hosts" }
     }
 
     fun validate(serverUrls: List<String>, allowServiceDefinitionHosts: Boolean = false) {
@@ -30,7 +31,11 @@ internal class CatalystOutboundPolicy(
             require(uri.rawUserInfo == null) { "Provider URLs must not embed user credentials" }
             require(uri.port == -1 || uri.port == 443) { "Provider URLs must use the standard HTTPS port" }
             val host = uri.host ?: throw IllegalArgumentException("Provider server URL has no valid host")
-            if (allowServiceDefinitionHosts) approvedHosts.add(normalizeHost(host))
+            val normalizedHost = normalizeHost(host)
+            require(allowServiceDefinitionHosts || normalizedHost in configuredHosts) {
+                "Scoped provider host is not deployment-allowlisted"
+            }
+            if (allowServiceDefinitionHosts) approvedHosts.add(normalizedHost)
             resolvePublicHost(host)
         }
     }
